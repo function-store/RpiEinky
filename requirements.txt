@@ -1,0 +1,19 @@
+watchdog==3.0.0
+Pillow==10.0.0
+pdf2image==1.16.3
+spidev==3.5
+gpiozero==1.6.2
+RPi.GPIO==0.7.1
+lgpio==0.2.2.0
+
+# Optional dependencies for PDF support
+# pdf2image requires poppler-utils to be installed on the system:
+# Ubuntu/Debian: sudo apt-get install poppler-utils
+# macOS: brew install poppler
+# Windows: Download poppler binaries and add to PATH
+
+# Note: The waveshare_epd library should be installed separately
+# from the Waveshare e-Paper repository:
+# https://github.com/waveshare/e-Paper 
+
+# or use sudo apt update && sudo apt install python3-watchdog python3-pil python3-pdf2image poppler-utils
