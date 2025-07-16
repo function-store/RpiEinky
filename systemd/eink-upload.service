@@ -1,0 +1,21 @@
+[Unit]
+Description=E-ink Upload Server
+After=network.target
+PartOf=eink-system.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/RpiEinky
+Environment=PATH=/home/pi/RpiEinky/eink_env/bin
+ExecStart=/home/pi/RpiEinky/eink_env/bin/python upload_server.py
+Restart=always
+RestartSec=10
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target 

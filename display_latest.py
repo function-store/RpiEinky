@@ -114,16 +114,6 @@ class EinkDisplayHandler(FileSystemEventHandler):
             y_offset = (self.epd.width - image.height) // 2
             display_image.paste(image, (x_offset, y_offset))
             
-            # Add filename at bottom
-            draw = ImageDraw.Draw(display_image)
-            filename = file_path.name
-            if len(filename) > 20:
-                filename = filename[:17] + "..."
-            
-            draw.rectangle([(0, self.epd.width - 25), (self.epd.height, self.epd.width)], 
-                          fill=self.epd.BLACK)
-            draw.text((5, self.epd.width - 20), filename, font=self.font_small, fill=self.epd.WHITE)
-            
             self.display_buffer(display_image)
             logger.info(f"Displayed image: {file_path.name}")
             
@@ -206,13 +196,6 @@ class EinkDisplayHandler(FileSystemEventHandler):
                     x_offset = (self.epd.height - pdf_image.width) // 2
                     y_offset = (self.epd.width - pdf_image.height) // 2
                     display_image.paste(pdf_image, (x_offset, y_offset))
-                    
-                    # Add filename
-                    draw = ImageDraw.Draw(display_image)
-                    draw.rectangle([(0, self.epd.width - 25), (self.epd.height, self.epd.width)], 
-                                  fill=self.epd.BLACK)
-                    draw.text((5, self.epd.width - 20), file_path.name, 
-                            font=self.font_small, fill=self.epd.WHITE)
                     
                     self.display_buffer(display_image)
                     logger.info(f"Displayed PDF: {file_path.name}")
@@ -323,8 +306,8 @@ class EinkDisplayHandler(FileSystemEventHandler):
     
     def resize_image_to_fit(self, image):
         """Resize image to fit display while maintaining aspect ratio"""
-        display_width = self.epd.width - 30  # Leave space for filename
-        display_height = self.epd.height - 10
+        display_width = self.epd.width
+        display_height = self.epd.height
         
         # Calculate scaling factor
         scale_x = display_height / image.width

@@ -1,0 +1,21 @@
+[Unit]
+Description=E-ink Display Monitor
+After=network.target
+PartOf=eink-system.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/RpiEinky
+Environment=PATH=/home/pi/RpiEinky/eink_env/bin
+ExecStart=/home/pi/RpiEinky/eink_env/bin/python display_latest.py
+Restart=always
+RestartSec=10
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target 

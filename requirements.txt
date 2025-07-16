@@ -5,6 +5,8 @@ spidev==3.5
 gpiozero==1.6.2
 RPi.GPIO==0.7.1
 lgpio==0.2.2.0
+Flask==2.3.3
+requests==2.31.0
 
 # Optional dependencies for PDF support
 # pdf2image requires poppler-utils to be installed on the system:

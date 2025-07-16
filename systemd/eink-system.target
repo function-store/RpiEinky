@@ -1,0 +1,7 @@
+[Unit]
+Description=E-ink Display System (Monitor + Upload Server)
+Requires=eink-display.service eink-upload.service
+After=eink-display.service eink-upload.service
+
+[Install]
+WantedBy=multi-user.target 

@@ -5,6 +5,8 @@ A Python system that monitors a folder for new files and automatically displays 
 ## 🎯 Features
 
 - **Real-time file monitoring** - Watches `~/watched_files` folder (or custom folder) for new files
+- **Persistent file storage** - Files remain on Pi until explicitly cleaned up (latest file always displayed)
+- **TouchDesigner integration** - HTTP upload server for remote file management
 - **Command line interface** - Full control via command line arguments
 - **Initial file display** - Show a specific file immediately on startup
 - **Flexible screen control** - Choose when to clear screen (startup, exit, both, or never)
@@ -17,6 +19,7 @@ A Python system that monitors a folder for new files and automatically displays 
 - **Display orientation control** - Normal or upside-down orientation
 - **Robust error handling** - Visual error messages on display
 - **Clean shutdown** - Properly cleans display on exit (configurable)
+- **File management API** - List files, get latest file info, cleanup old files
 
 ## 🛠️ Hardware Requirements
 
@@ -25,6 +28,8 @@ A Python system that monitors a folder for new files and automatically displays 
 - Proper wiring as per Waveshare documentation
 
 ## 📦 Installation
+
+> **📢 Update Notice**: The system now preserves uploaded files instead of deleting them. Files accumulate over time and the latest file is always displayed. Use the `/cleanup_old_files` endpoint to manage storage.
 
 ### Step 1: Install System Dependencies
 
@@ -160,6 +165,112 @@ python display_latest.py -d ~/welcome.jpg -f ~/my_files --clear-start --no-clear
 | PDFs | `.pdf` | First page as image (requires pdf2image) |
 | Other | Any other extension | File information display |
 
+## 🎨 TouchDesigner Integration
+
+The system includes a complete TouchDesigner integration for remote file uploads via HTTP. This allows you to push files from TouchDesigner directly to your e-ink display over the network.
+
+### Setup TouchDesigner Integration
+
+1. **Start the upload server on your Pi:**
+   ```bash
+   source eink_env/bin/activate
+   python upload_server.py
+   ```
+
+2. **Find your Pi's IP address:**
+   ```bash
+   hostname -I
+   ```
+
+3. **Test the server (optional):**
+   ```bash
+   # On your computer (not Pi)
+   python test_upload_server.py 192.168.1.100  # Replace with your Pi's IP
+   ```
+
+4. **TouchDesigner Component:**
+   - TODO: create separate tox and document it
+
+### TouchDesigner Features
+
+   - TODO
+
+### Upload Server Endpoints
+
+| Endpoint | Method | Purpose | Data Format |
+|----------|---------|---------|-------------|
+| `/upload` | POST | Upload files | multipart/form-data |
+| `/upload_text` | POST | Upload text content | JSON: `{"content": "text", "filename": "name.txt"}` |
+| `/status` | GET | Server status | Returns JSON status |
+| `/list_files` | GET | List all files in watched folder | No data |
+| `/latest_file` | GET | Get info about most recent file | No data |
+| `/cleanup_old_files` | POST | Remove old files, keep recent N files | JSON: `{"keep_count": 10}` |
+
+### File Management Behavior
+
+**🔄 New Behavior: Files Are Preserved**
+- **Files are NOT deleted** after upload - they remain on the Pi permanently
+- **Latest file is always displayed** - the most recently uploaded file appears on screen
+- **Files accumulate over time** - you can build up a collection of files
+- **Timestamp-based naming** - files get unique names to avoid conflicts (e.g., `image_1703123456.jpg`)
+
+**How It Works:**
+1. **Upload a file** → It's automatically displayed on the e-ink screen
+2. **Upload another file** → The newer file is displayed (previous one remains stored)
+3. **Files accumulate** → Previous files remain available in the watched folder
+4. **Display shows latest** → The system always shows the most recent file
+
+**Managing Storage:**
+- Use `/list_files` to see all files in the watched folder (sorted by newest first)
+- Use `/latest_file` to get info about the currently displayed file
+- Use `/cleanup_old_files` to remove old files while keeping recent ones (recommended for long-term use)
+
+**Storage Management Example:**
+```bash
+# Keep only the 10 most recent files
+curl -X POST http://192.168.1.100:5000/cleanup_old_files \
+  -H "Content-Type: application/json" \
+  -d '{"keep_count": 10}'
+```
+
+### Running Both Systems
+
+To use TouchDesigner integration, you need to run both the display monitor and the upload server:
+
+**Terminal 1 - Display Monitor:**
+```bash
+source eink_env/bin/activate
+python display_latest.py
+```
+
+**Terminal 2 - Upload Server:**
+```bash
+source eink_env/bin/activate
+python upload_server.py
+```
+
+The display monitor watches for files and shows them on the e-ink display. The upload server receives files from TouchDesigner and saves them to the watched folder, triggering the display to update.
+
+**Alternative: Combined Runner Script**
+```bash
+# Use the combined runner for both services
+source eink_env/bin/activate
+python run_eink_system.py
+```
+
+**Alternative: Combined with initial file display**
+```bash
+# Start display monitor with server running in background
+python display_latest.py -d ~/welcome.jpg &
+python upload_server.py
+```
+
+**💡 Storage Management Tips:**
+- Files accumulate over time, so consider periodic cleanup
+- Use `/list_files` endpoint to monitor storage usage
+- Set up automatic cleanup with `/cleanup_old_files` to maintain system performance
+- Monitor disk space: `df -h ~/watched_files`
+
 ## 🔧 Configuration
 
 ### Change Monitored Folder
@@ -232,11 +343,15 @@ self.font_large = ImageFont.truetype(font_path, 20)
 
 ```
 RpiEinky/
-├── display_latest.py      # Main monitoring system
-├── test_display_system.py # Test file generator
-├── requirements.txt       # Python dependencies
-├── README.md             # This file
-└── ~/watched_files/      # Monitored folder (in home directory, created automatically)
+├── display_latest.py              # Main monitoring system
+├── upload_server.py               # HTTP upload server for TouchDesigner
+├── test_display_system.py         # Test file generator
+├── test_upload_server.py          # Upload server test script
+├── touchdesigner_eink_script.py   # TouchDesigner project builder
+├── EinkDisplay_TouchDesigner.toe  # TouchDesigner project template
+├── requirements.txt               # Python dependencies
+├── README.md                      # This file
+└── ~/watched_files/               # Monitored folder (in home directory, created automatically)
 ```
 
 ## 🐛 Troubleshooting
@@ -388,6 +503,33 @@ pip install pdf2image
 chmod 755 ~/watched_files
 ```
 
+### Storage Management Issues
+
+**Problem:** Too many files accumulating in watched folder
+
+**Solution:** Use the cleanup endpoint or manually manage files:
+```bash
+# Check current files
+curl http://192.168.1.100:5000/list_files
+
+# Keep only 10 most recent files
+curl -X POST http://192.168.1.100:5000/cleanup_old_files \
+  -H "Content-Type: application/json" \
+  -d '{"keep_count": 10}'
+
+# Or manually check disk usage
+du -sh ~/watched_files
+ls -la ~/watched_files | wc -l  # Count files
+```
+
+**Problem:** Need to remove all files
+
+**Solution:** Manual cleanup (use carefully):
+```bash
+# Remove all files in watched folder
+rm -f ~/watched_files/*
+```
+
 ## 📋 Dependencies
 
 ### Python Packages (installed via pip)
@@ -398,6 +540,8 @@ chmod 755 ~/watched_files
 - `gpiozero==1.6.2` - GPIO control for Raspberry Pi
 - `RPi.GPIO==0.7.1` - GPIO library for Raspberry Pi
 - `lgpio==0.2.2.0` - Modern GPIO library for Raspberry Pi
+- `Flask==2.3.3` - Web server for TouchDesigner integration
+- `requests==2.31.0` - HTTP client for testing and advanced features
 
 ### System Packages (installed via apt)
 - `python3-venv` - Virtual environment support
@@ -405,6 +549,10 @@ chmod 755 ~/watched_files
 
 ### Hardware Library
 - Waveshare e-Paper library (from their GitHub)
+
+### TouchDesigner Requirements
+- TouchDesigner (any recent version)
+- Network connection between TouchDesigner computer and Raspberry Pi
 
 ## 🔄 Auto-Start (Optional)
 
