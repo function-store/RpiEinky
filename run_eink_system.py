@@ -17,12 +17,12 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 def run_display_monitor(args):
     """Run the display monitor in a separate thread"""
+    # Save original argv before any potential exceptions
+    original_argv = sys.argv.copy()
+    
     try:
         # Import and run display_latest
         import display_latest
-        
-        # Override sys.argv for display_latest
-        original_argv = sys.argv.copy()
         
         # Build arguments for display_latest
         display_args = ['display_latest.py']
@@ -70,10 +70,44 @@ def run_upload_server(args):
     except Exception as e:
         print(f"Upload server error: {e}")
 
-def signal_handler(signum, frame):
-    """Handle Ctrl+C gracefully"""
-    print("\n🛑 Shutting down e-ink system...")
+# Global variables for exit handling
+CLEAR_ON_EXIT = True
+exit_requested = False
+
+def signal_handler_clear_exit(signum, frame):
+    """Handle Ctrl+C - exit with display clearing"""
+    global exit_requested
+    print("\n🛑 Ctrl+C pressed - shutting down e-ink system with display clearing...")
+    exit_requested = True
+    
+    # Clean up display before exiting (if not disabled)
+    if CLEAR_ON_EXIT:
+        try:
+            # Import and initialize EPD for cleanup
+            from waveshare_epd import epd2in15g
+            epd = epd2in15g.EPD()
+            epd.init()
+            epd.Clear()
+            epd.sleep()
+            print("🖥️  Display cleared and put to sleep")
+        except Exception as e:
+            print(f"⚠️  Display cleanup error: {e}")
+    else:
+        try:
+            # Just put display to sleep without clearing
+            from waveshare_epd import epd2in15g
+            epd = epd2in15g.EPD()
+            epd.init()
+            epd.sleep()
+            print("🖥️  Display put to sleep (not cleared)")
+        except Exception as e:
+            print(f"⚠️  Display sleep error: {e}")
+    
+    # Give a moment for cleanup to complete
+    time.sleep(1)
     os._exit(0)
+
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -110,12 +144,19 @@ Examples:
     
     args = parser.parse_args()
     
-    # Handle signal for graceful shutdown
-    signal.signal(signal.SIGINT, signal_handler)
+    # Set global clear on exit flag
+    global CLEAR_ON_EXIT
+    CLEAR_ON_EXIT = not args.no_clear_exit
+    
+    # Handle signals for graceful shutdown
+    signal.signal(signal.SIGINT, signal_handler_clear_exit)      # Ctrl+C - clear and exit
     
     print("🚀 Starting E-ink Display System...")
     print(f"📁 Watched folder: {os.path.expanduser(args.folder)}")
     print(f"🌐 Upload server port: {args.port}")
+    if args.no_clear_exit:
+        print("🖥️  Display will NOT be cleared on exit")
+        print("Press Ctrl+C to stop and clear display")
     
     threads = []
     
@@ -145,10 +186,9 @@ Examples:
         print("✅ E-ink Display System is running!")
         print("   - Display monitor: Watching for new files")
         print("   - Upload server: Ready for TouchDesigner connections")
-        print("   - Press Ctrl+C to stop")
         
-        # Keep main thread alive
-        while True:
+        # Keep main thread alive until exit is requested
+        while not exit_requested:
             time.sleep(1)
             
             # Check if any thread has died
@@ -157,6 +197,7 @@ Examples:
                     print(f"⚠️  Thread {thread.name} has stopped")
                     
     except KeyboardInterrupt:
+        # This shouldn't happen anymore since we handle signals, but keep as fallback
         print("\n🛑 Stopping E-ink Display System...")
     except Exception as e:
         print(f"❌ System error: {e}")

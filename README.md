@@ -10,8 +10,10 @@ A Python system that monitors a folder for new files and automatically displays 
 - **Command line interface** - Full control via command line arguments
 - **Initial file display** - Show a specific file immediately on startup
 - **Flexible screen control** - Choose when to clear screen (startup, exit, both, or never)
+- **Auto-startup service** - Run automatically on system boot with systemd
+- **Simple clear script** - Quick command to clear the display
 - **Multi-format support**:
-  - **Images** (jpg, png, bmp, gif): Auto-resized and centered with filename
+  - **Images** (jpg, png, bmp, gif): Auto-resized and centered
   - **Text files** (txt, md, py, js, html, css): Full content with word wrapping
   - **PDFs**: First page converted to image (requires pdf2image)
   - **Other files**: File information display (name, size, type, date)
@@ -117,6 +119,11 @@ python test_display_system.py
    - Press `Ctrl+C` to stop monitoring
    - Display will be cleared and put to sleep (unless `--no-clear-exit` is used)
 
+4. **Clear the display:**
+   ```bash
+   python clear_display.py
+   ```
+
 ### Command Line Options
 
 The system supports several command line arguments for customization:
@@ -160,10 +167,124 @@ python display_latest.py -d ~/welcome.jpg -f ~/my_files --clear-start --no-clear
 
 | Type | Extensions | Display Method |
 |------|------------|----------------|
-| Images | `.jpg`, `.png`, `.bmp`, `.gif` | Resized, centered, with filename |
+| Images | `.jpg`, `.png`, `.bmp`, `.gif` | Resized, centered |
 | Text | `.txt`, `.md`, `.py`, `.js`, `.html`, `.css` | Full content, word-wrapped |
 | PDFs | `.pdf` | First page as image (requires pdf2image) |
 | Other | Any other extension | File information display |
+
+## 🔄 Auto-Start Service
+
+The system includes an automated startup service that will run the e-ink display system automatically when your Raspberry Pi boots up.
+
+### Quick Setup
+
+1. **Run the automated setup:**
+   ```bash
+   ./setup_startup.sh
+   ```
+   
+   The setup script will automatically:
+   - Detect your virtual environment location (`~/eink_env` or `./eink_env`)
+   - Update service file with correct paths
+   - Install and enable the systemd service
+   - Set up proper permissions for hardware access
+
+2. **Reboot to test:**
+   ```bash
+   sudo reboot
+   ```
+
+The system will automatically start monitoring for files after boot!
+
+### Manual Setup
+
+If you prefer to set up the service manually:
+
+1. **Update the service file with your paths:**
+   ```bash
+   # Edit the service file to match your installation directory
+   nano eink-display.service
+   ```
+
+2. **Install the service:**
+   ```bash
+   sudo cp eink-display.service /etc/systemd/system/
+   sudo systemctl daemon-reload
+   sudo systemctl enable eink-display.service
+   ```
+
+3. **Start the service:**
+   ```bash
+   sudo systemctl start eink-display.service
+   ```
+
+### Service Management
+
+| Command | Purpose |
+|---------|---------|
+| `sudo systemctl start eink-display.service` | Start the service |
+| `sudo systemctl stop eink-display.service` | Stop the service |
+| `sudo systemctl restart eink-display.service` | Restart the service |
+| `sudo systemctl status eink-display.service` | Check service status |
+| `sudo systemctl disable eink-display.service` | Disable auto-start |
+| `sudo journalctl -u eink-display.service -f` | View real-time logs |
+
+**Common Issues:**
+- If you get a "203 error code", check that the virtual environment path in the service file is correct
+- The service requires proper hardware group membership (gpio, spi, i2c, dialout)
+- Hardware access may require a reboot after adding users to hardware groups
+
+### Customizing Auto-Start
+
+You can customize how the service starts by editing the service file:
+
+```bash
+sudo nano /etc/systemd/system/eink-display.service
+```
+
+**Example configurations:**
+
+```ini
+# Basic monitoring (default) - using virtual environment
+ExecStart=/home/pi/eink_env/bin/python /home/pi/RpiEinky/run_eink_system.py
+
+# Show welcome image on startup
+ExecStart=/home/pi/eink_env/bin/python /home/pi/RpiEinky/display_latest.py --display-file /home/pi/welcome.jpg
+
+# Kiosk mode: Show welcome, don't clear on exit
+ExecStart=/home/pi/eink_env/bin/python /home/pi/RpiEinky/display_latest.py --display-file /home/pi/kiosk/welcome.jpg --no-clear-exit
+
+# Monitor custom folder with clean start
+ExecStart=/home/pi/eink_env/bin/python /home/pi/RpiEinky/display_latest.py --folder /home/pi/kiosk_files --clear-start
+```
+
+**Important:** The setup script automatically detects whether your virtual environment is in the project folder (`RpiEinky/eink_env`) or your home directory (`~/eink_env`) and updates the service file accordingly.
+
+After making changes, reload the service:
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart eink-display.service
+```
+
+## 🧹 Clear Display Script
+
+A simple standalone script to clear the e-ink display:
+
+```bash
+# Clear the display immediately
+python clear_display.py
+```
+
+This script:
+- Initializes the e-ink display
+- Clears the screen (makes it white)
+- Puts the display to sleep
+- Exits cleanly
+
+Perfect for:
+- Resetting the display after testing
+- Cleaning up before shutdown
+- Quick display maintenance
 
 ## 🎨 TouchDesigner Integration
 
@@ -205,6 +326,7 @@ The system includes a complete TouchDesigner integration for remote file uploads
 | `/list_files` | GET | List all files in watched folder | No data |
 | `/latest_file` | GET | Get info about most recent file | No data |
 | `/cleanup_old_files` | POST | Remove old files, keep recent N files | JSON: `{"keep_count": 10}` |
+| `/clear_screen` | POST | Clear the e-ink display | No data |
 
 ### File Management Behavior
 
@@ -224,6 +346,7 @@ The system includes a complete TouchDesigner integration for remote file uploads
 - Use `/list_files` to see all files in the watched folder (sorted by newest first)
 - Use `/latest_file` to get info about the currently displayed file
 - Use `/cleanup_old_files` to remove old files while keeping recent ones (recommended for long-term use)
+- Use `/clear_screen` to clear the display without removing files
 
 **Storage Management Example:**
 ```bash
@@ -231,6 +354,9 @@ The system includes a complete TouchDesigner integration for remote file uploads
 curl -X POST http://192.168.1.100:5000/cleanup_old_files \
   -H "Content-Type: application/json" \
   -d '{"keep_count": 10}'
+
+# Clear the display
+curl -X POST http://192.168.1.100:5000/clear_screen
 ```
 
 ### Running Both Systems
@@ -345,10 +471,13 @@ self.font_large = ImageFont.truetype(font_path, 20)
 RpiEinky/
 ├── display_latest.py              # Main monitoring system
 ├── upload_server.py               # HTTP upload server for TouchDesigner
+├── run_eink_system.py             # Combined runner for both services
+├── clear_display.py               # Simple script to clear the display
+├── eink-display.service           # Systemd service file for auto-start
+├── setup_startup.sh               # Automated setup script for auto-start
 ├── test_display_system.py         # Test file generator
 ├── test_upload_server.py          # Upload server test script
 ├── touchdesigner_eink_script.py   # TouchDesigner project builder
-├── EinkDisplay_TouchDesigner.toe  # TouchDesigner project template
 ├── requirements.txt               # Python dependencies
 ├── README.md                      # This file
 └── ~/watched_files/               # Monitored folder (in home directory, created automatically)
@@ -528,6 +657,73 @@ ls -la ~/watched_files | wc -l  # Count files
 ```bash
 # Remove all files in watched folder
 rm -f ~/watched_files/*
+
+# Or use the clear display script
+python clear_display.py
+```
+
+### Auto-Start Service Issues
+
+**Problem:** Service fails to start with "203 error code"
+
+**Solution:** This usually means the virtual environment path is wrong:
+```bash
+# Check if virtual environment exists at the path in service file
+ls -la /home/your_username/eink_env/bin/python
+
+# If it doesn't exist, either:
+# 1. Run the setup script again (it auto-detects the correct path)
+./setup_startup.sh
+
+# 2. Or manually fix the service file
+sudo nano /etc/systemd/system/eink-display.service
+# Update ExecStart line to use correct path to your virtual environment
+```
+
+**Problem:** Service fails to start on boot
+
+**Solution:** Check service status and logs:
+```bash
+# Check service status
+sudo systemctl status eink-display.service
+
+# View service logs
+sudo journalctl -u eink-display.service -f
+
+# Check if paths are correct in service file
+sudo nano /etc/systemd/system/eink-display.service
+```
+
+**Problem:** Service starts but display doesn't work
+
+**Solution:** Check permissions and hardware access:
+```bash
+# Make sure user has GPIO access
+sudo usermod -a -G gpio,spi,i2c,dialout your_username
+
+# Check if SPI is enabled
+sudo raspi-config nonint do_spi 0
+
+# Test hardware access manually
+source ~/eink_env/bin/activate  # or ./eink_env/bin/activate
+python -c "from waveshare_epd import epd2in15g; epd = epd2in15g.EPD(); print('Hardware OK')"
+
+# Restart service after changes
+sudo systemctl restart eink-display.service
+```
+
+**Problem:** Service receives files but doesn't display them
+
+**Solution:** Check hardware permissions and environment:
+```bash
+# The service needs proper hardware group membership
+sudo usermod -a -G gpio,spi,i2c,dialout your_username
+
+# Reboot to apply group changes
+sudo reboot
+
+# Check service logs for hardware access errors
+sudo journalctl -u eink-display.service -f
 ```
 
 ## 📋 Dependencies
@@ -554,53 +750,6 @@ rm -f ~/watched_files/*
 - TouchDesigner (any recent version)
 - Network connection between TouchDesigner computer and Raspberry Pi
 
-## 🔄 Auto-Start (Optional)
-
-To run automatically on boot, create a systemd service:
-
-```bash
-sudo nano /etc/systemd/system/eink-display.service
-```
-
-Add (customize the ExecStart line with your desired options):
-```ini
-[Unit]
-Description=E-Ink File Display System
-After=network.target
-
-[Service]
-Type=simple
-User=pi
-WorkingDirectory=/home/pi/RpiEinky
-# Basic usage:
-ExecStart=/home/pi/RpiEinky/eink_env/bin/python display_latest.py
-# Or with custom options:
-# ExecStart=/home/pi/RpiEinky/eink_env/bin/python display_latest.py --display-file /home/pi/welcome.jpg --no-clear-exit
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-```
-
-**Example service configurations:**
-
-```ini
-# Kiosk mode: Show welcome screen, don't clear on exit
-ExecStart=/home/pi/RpiEinky/eink_env/bin/python display_latest.py --display-file /home/pi/kiosk/welcome.jpg --no-clear-exit
-
-# Status display: Clear on start, show status file
-ExecStart=/home/pi/RpiEinky/eink_env/bin/python display_latest.py --clear-start --display-file /home/pi/status.txt
-
-# Photo frame: Normal orientation, show default photo
-ExecStart=/home/pi/RpiEinky/eink_env/bin/python display_latest.py --normal-orientation --display-file /home/pi/photos/default.jpg --no-clear-exit
-```
-
-Enable and start:
-```bash
-sudo systemctl enable eink-display.service
-sudo systemctl start eink-display.service
-```
-
 ## 📝 Examples
 
 ### Common Usage Patterns
@@ -620,6 +769,9 @@ python display_latest.py --normal-orientation --no-clear-exit
 
 # Full featured: custom folder, initial file, controlled clearing
 python display_latest.py -f ~/display_queue -d ~/status.txt --clear-start --no-clear-exit
+
+# Just clear the display
+python clear_display.py
 ```
 
 ### Adding Different File Types
@@ -664,11 +816,14 @@ python display_latest.py \
 ### Viewing Logs
 
 ```bash
-# Real-time logs
+# Real-time logs (manual run)
 python display_latest.py
 
 # System service logs
 sudo journalctl -u eink-display.service -f
+
+# Service status
+sudo systemctl status eink-display.service
 ```
 
 ## 🤝 Contributing

@@ -5,6 +5,7 @@ import os
 import time
 import logging
 import argparse
+import signal
 from pathlib import Path
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
@@ -22,6 +23,19 @@ from waveshare_epd import epd2in15g
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+# Global variables for exit handling
+exit_requested = False
+clear_on_exit_requested = True
+
+def signal_handler_clear_exit(signum, frame):
+    """Handle Ctrl+C - exit with display clearing"""
+    global exit_requested, clear_on_exit_requested
+    logger.info("\n🛑 Ctrl+C pressed - exiting with display clearing...")
+    exit_requested = True
+    clear_on_exit_requested = True
+
+
 
 class EinkDisplayHandler(FileSystemEventHandler):
     def __init__(self, watched_folder="./watched_files", clear_on_start=False, clear_on_exit=True):
@@ -56,13 +70,68 @@ class EinkDisplayHandler(FileSystemEventHandler):
         logger.info(f"Monitoring folder: {self.watched_folder.absolute()}")
         logger.info(f"E-ink display initialized - Size: {self.epd.width}x{self.epd.height}")
     
+    def validate_file(self, file_path):
+        """Validate that file is complete and readable"""
+        try:
+            # Check file exists and has content
+            if not file_path.exists() or file_path.stat().st_size == 0:
+                logger.error(f"File is empty or doesn't exist: {file_path}")
+                return False
+            
+            # For image files, try to open with PIL
+            if file_path.suffix.lower() in ['.jpg', '.jpeg', '.png', '.bmp', '.gif']:
+                try:
+                    with Image.open(file_path) as img:
+                        # Force loading to ensure file is complete
+                        img.load()
+                        logger.info(f"File validation passed: {file_path.name} ({img.size[0]}x{img.size[1]})")
+                        return True
+                except Exception as e:
+                    logger.error(f"Image validation failed: {file_path.name} - {e}")
+                    return False
+            
+            # For other files, just check readability
+            try:
+                with open(file_path, 'rb') as f:
+                    f.read(1024)  # Read first 1KB to check if readable
+                return True
+            except Exception as e:
+                logger.error(f"File read validation failed: {file_path.name} - {e}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"File validation error: {file_path.name} - {e}")
+            return False
+    
     def display_buffer(self, image):
         """Display image buffer with orientation support"""
-        if self.display_upside_down:
-            # Simple 180-degree rotation using PIL
-            image = image.rotate(180)
-        
-        self.epd.display(self.epd.getbuffer(image))
+        try:
+            if self.display_upside_down:
+                # Simple 180-degree rotation using PIL
+                image = image.rotate(180)
+            
+            self.epd.display(self.epd.getbuffer(image))
+            
+        except Exception as e:
+            logger.error(f"Display buffer error: {e}")
+            if "Bad file descriptor" in str(e):
+                logger.info("Attempting to reinitialize display...")
+                self.reinitialize_display()
+                # Try again after reinitializing
+                if self.display_upside_down:
+                    image = image.rotate(180)
+                self.epd.display(self.epd.getbuffer(image))
+    
+    def reinitialize_display(self):
+        """Reinitialize the e-ink display"""
+        try:
+            logger.info("Reinitializing e-ink display...")
+            self.epd.sleep()
+            time.sleep(1)
+            self.epd.init()
+            logger.info("Display reinitialized successfully")
+        except Exception as e:
+            logger.error(f"Display reinitialization failed: {e}")
     
     def on_created(self, event):
         if event.is_directory:
@@ -71,8 +140,13 @@ class EinkDisplayHandler(FileSystemEventHandler):
         file_path = Path(event.src_path)
         logger.info(f"New file detected: {file_path.name}")
         
-        # Small delay to ensure file is fully written
-        time.sleep(0.5)
+        # Longer delay to ensure file is fully written
+        time.sleep(2.0)
+        
+        # Validate file is complete and readable
+        if not self.validate_file(file_path):
+            logger.error(f"File validation failed: {file_path.name}")
+            return
         
         try:
             self.display_file(file_path)
@@ -99,9 +173,15 @@ class EinkDisplayHandler(FileSystemEventHandler):
             # Open and process image
             image = Image.open(file_path)
             
-            # Convert to RGB if necessary
+            # Convert to RGB if necessary, using white background for transparency
             if image.mode != 'RGB':
-                image = image.convert('RGB')
+                if image.mode == 'RGBA':
+                    # Create white background for transparent pixels
+                    white_bg = Image.new('RGB', image.size, (255, 255, 255))
+                    white_bg.paste(image, mask=image.split()[-1])  # Use alpha channel as mask
+                    image = white_bg
+                else:
+                    image = image.convert('RGB')
             
             # Resize to fit display while maintaining aspect ratio
             image = self.resize_image_to_fit(image)
@@ -190,6 +270,16 @@ class EinkDisplayHandler(FileSystemEventHandler):
                 if images:
                     # Convert PDF page to image and display
                     pdf_image = images[0]
+                    
+                    # Handle transparency for PDF images
+                    if pdf_image.mode == 'RGBA':
+                        # Create white background for transparent pixels
+                        white_bg = Image.new('RGB', pdf_image.size, (255, 255, 255))
+                        white_bg.paste(pdf_image, mask=pdf_image.split()[-1])  # Use alpha channel as mask
+                        pdf_image = white_bg
+                    elif pdf_image.mode != 'RGB':
+                        pdf_image = pdf_image.convert('RGB')
+                    
                     pdf_image = self.resize_image_to_fit(pdf_image)
                     
                     display_image = Image.new('RGB', (self.epd.height, self.epd.width), self.epd.WHITE)
@@ -303,6 +393,11 @@ class EinkDisplayHandler(FileSystemEventHandler):
             
         except Exception as e:
             logger.error(f"Error displaying error message: {e}")
+            if "Bad file descriptor" in str(e):
+                logger.info("Display error failed due to bad file descriptor - attempting reinitialize...")
+                self.reinitialize_display()
+                # Don't retry error display to avoid infinite loop
+                logger.info("Display reinitialized after error display failure")
     
     def resize_image_to_fit(self, image):
         """Resize image to fit display while maintaining aspect ratio"""
@@ -319,12 +414,17 @@ class EinkDisplayHandler(FileSystemEventHandler):
         
         return image.resize((new_width, new_height), Image.Resampling.LANCZOS)
     
-    def cleanup(self):
+    def cleanup(self, force_clear=None):
         """Clean up resources"""
         try:
-            if self.clear_on_exit:
+            # Use force_clear if provided, otherwise use instance setting
+            should_clear = force_clear if force_clear is not None else self.clear_on_exit
+            
+            if should_clear:
                 self.epd.Clear()
                 logger.info("E-ink display cleared")
+            else:
+                logger.info("E-ink display NOT cleared (keeping content)")
             self.epd.sleep()
             logger.info("E-ink display cleaned up")
         except Exception as e:
@@ -362,6 +462,17 @@ Examples:
     CLEAR_ON_START = args.clear_start
     CLEAR_ON_EXIT = not args.no_clear_exit
     
+    # Set up signal handlers only if we're in the main thread
+    signal_handlers_registered = False
+    try:
+        signal.signal(signal.SIGINT, signal_handler_clear_exit)      # Ctrl+C - clear and exit
+        logger.info("Signal handlers registered for exit control")
+        signal_handlers_registered = True
+    except ValueError as e:
+        # This happens when not in main thread (e.g., when called from run_eink_system.py)
+        logger.info("Signal handlers not registered (not in main thread)")
+        logger.info("Exit control will be handled by parent process")
+    
     # Create the handler
     handler = EinkDisplayHandler(WATCHED_FOLDER, 
                                clear_on_start=CLEAR_ON_START, 
@@ -374,7 +485,11 @@ Examples:
     
     try:
         observer.start()
-        logger.info("File monitoring started. Press Ctrl+C to stop...")
+        logger.info("File monitoring started.")
+        if signal_handlers_registered:
+            logger.info("Press Ctrl+C to stop and clear display")
+        else:
+            logger.info("Exit control handled by parent process")
         
         # Display initial file if provided
         if args.display_file:
@@ -406,18 +521,27 @@ Examples:
             
             handler.display_buffer(display_image)
         
-        # Keep the script running
-        while True:
-            time.sleep(1)
+        # Keep the script running until exit is requested
+        if signal_handlers_registered:
+            # Use signal-based exit control
+            while not exit_requested:
+                time.sleep(1)
+        else:
+            # Fallback to KeyboardInterrupt when running in thread
+            while True:
+                time.sleep(1)
             
     except KeyboardInterrupt:
+        # This shouldn't happen anymore since we handle signals, but keep as fallback
         logger.info("Stopping file monitor...")
     except Exception as e:
         logger.error(f"Unexpected error: {e}")
     finally:
         observer.stop()
         observer.join()
-        handler.cleanup()
+        # Use the global flag to determine if we should clear
+        global clear_on_exit_requested
+        handler.cleanup(force_clear=clear_on_exit_requested)
 
 if __name__ == "__main__":
     main()

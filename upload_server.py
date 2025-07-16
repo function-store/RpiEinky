@@ -250,6 +250,27 @@ def cleanup_old_files():
         logger.error(f"Cleanup error: {e}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/clear_screen', methods=['POST'])
+def clear_screen():
+    """Clear the e-ink display screen (without removing files)"""
+    try:
+        # Import and initialize EPD for clearing
+        from waveshare_epd import epd2in15g
+        
+        epd = epd2in15g.EPD()
+        epd.init()
+        epd.Clear()
+        epd.sleep()
+        
+        logger.info("E-ink display screen cleared")
+        return jsonify({
+            'message': 'E-ink display screen cleared successfully'
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Clear screen error: {e}")
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
     ensure_upload_folder()
     logger.info(f"Starting upload server...")

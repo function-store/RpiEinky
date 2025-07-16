@@ -1,0 +1,26 @@
+[Unit]
+Description=E-ink Display System
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=danrasp
+Group=gpio
+SupplementaryGroups=spi i2c gpio dialout
+WorkingDirectory=/home/danrasp/RpiEinky
+ExecStart=/home/danrasp/eink_env/bin/python /home/danrasp/RpiEinky/run_eink_system.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Environment variables for hardware access
+Environment=PYTHONPATH=/home/danrasp/RpiEinky
+Environment=DISPLAY=:0
+Environment=HOME=/home/danrasp
+Environment=USER=danrasp
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+
+[Install]
+WantedBy=multi-user.target 

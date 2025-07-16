@@ -1,4 +1,4 @@
-
+﻿
 import json
 import os
 from pathlib import Path
@@ -12,11 +12,18 @@ class RpiEinkyUploadExt:
 		self.ownerComp = ownerComp
 		self.webClient : webclientDAT = self.ownerComp.op('webclient1')
 		self.movieFileOut : moviefileoutTOP = self.ownerComp.op('moviefileout1')
+		self.movieFileIn : moviefileinTOP = self.ownerComp.op('moviefilein1')
 		
 		
 	@property
 	def image(self):
 		return self.ownerComp.op('null_img')
+
+	@property
+	def latestFilePath(self):
+		sorty = self.ownerComp.op('sort1')
+		path = sorty[1,'path'].val
+		return path
 
 	@property
 	def isOnCook(self):
@@ -61,7 +68,7 @@ class RpiEinkyUploadExt:
 			if not os.path.exists(filepath):
 				debug(f"File not found: {filepath}")
 				return False
-			
+			#self.movieFileIn.par.file.val = filepath
 			filename = os.path.basename(filepath)
 			
 			# Use WebclientDAT request method for file upload
@@ -116,20 +123,36 @@ class RpiEinkyUploadExt:
 			debug(f"Text upload error: {e}")
 			return False
 	
-	def clear_display(self):
-		"""Clear the e-ink display"""
+	def clear_display_screen(self):
+		"""Actually clear the e-ink display screen"""
 		try:
-			# Use WebclientDAT request method for clear display
+			# Use WebclientDAT request method to clear the actual display
 			connection_id = self.webClient.request(
-				url=f'{self.server_url}/clear_display',
-				method='POST'
+				f'{self.server_url}/clear_screen',
+				'POST'
 			)
 			
-			debug(f"Clearing display... (connection: {connection_id})")
+			debug(f"ðŸ–¥ï¸ Clearing e-ink display screen... (connection: {connection_id})")
 			
 			# Handle response
-			self._handle_response("Clear display", connection_id)
+			self._handle_response("Clear display screen", connection_id)
 			
+			return True
+			
+		except Exception as e:
+			debug(f"Clear display screen error: {e}")
+			return False
+	
+	def clear_display(self):
+		"""Clear the e-ink display by removing all files from Pi (legacy method)"""
+		try:
+			debug("ðŸ§¹ Clearing display by removing all files from Pi...")
+			
+			# Use cleanup with keep_count=0 to remove all files
+			# This effectively "clears" the display since no files remain
+			self.cleanup_pi_files(keep_count=0)
+			
+			debug(f"Display cleared by removing all Pi files")
 			return True
 			
 		except Exception as e:
@@ -164,9 +187,9 @@ class RpiEinkyUploadExt:
 				return False
 			
 			# Get temp file path
-			temp_file = self._get_temp_file_path("temp_eink_top.bmp")
+			temp_file = self._get_temp_file_path("temp_eink_top")
 			
-			self.movieFileOut.par.file = temp_file
+			self.movieFileOut.par.file.expr = f'"{temp_file}" + me.fileSuffix'
 
 			# Save TOP to temp file
 			self.movieFileOut.par.addframe.pulse()
@@ -194,6 +217,10 @@ class RpiEinkyUploadExt:
 			debug(f"TOP upload error: {e}")
 			return False
 	
+	def onNewFileFoundTable(self, dat):
+		latestFilePath = self.latestFilePath
+		debug(f"New file found: {latestFilePath}")
+		self.upload_file(latestFilePath)
 
 	def onNewFileFound(self, info):
 		path = info.path
@@ -257,6 +284,119 @@ class RpiEinkyUploadExt:
 			debug(f"Text file upload error: {e}")
 			return False
 	
+	def onParCleanlocalfolder(self):
+		debug("Cleaning local folder")
+		self.cleanup_local_temp()
+
+	def onParCleanrpifolder(self):
+		debug("Cleaning Pi folder")
+		# Force cleanup by keeping only 1 file, or 0 to remove all
+		self.cleanup_pi_files(keep_count=0)
+
+	def cleanup_folders(self, keep_pi_files=10, clean_local_temp=True):
+		"""Clean both local temp folder and Pi watched folder"""
+		debug(f"ðŸ§¹ Starting folder cleanup...")
+		
+		results = {
+			'local_temp_cleaned': False,
+			'pi_files_cleaned': False,
+			'local_files_removed': 0,
+			'pi_files_removed': 0
+		}
+		
+		# Clean local temp folder
+		if clean_local_temp:
+			results['local_files_removed'] = self.cleanup_local_temp()
+			results['local_temp_cleaned'] = True
+		
+		# Clean Pi watched folder
+		results['pi_files_removed'] = self.cleanup_pi_files(keep_pi_files)
+		results['pi_files_cleaned'] = True
+		
+		debug(f"ðŸ§¹ Cleanup complete: {results}")
+		return results
+	
+	def cleanup_local_temp(self):
+		"""Clean local temp folder"""
+		try:
+			if not self.tempFolder:
+				debug("No temp folder specified - skipping local cleanup")
+				return 0
+			
+			import os
+			from pathlib import Path
+			
+			temp_path = Path(self.tempFolder)
+			if not temp_path.exists():
+				debug(f"Temp folder doesn't exist: {temp_path}")
+				return 0
+			
+			# Remove all files in temp folder
+			files_removed = 0
+			for file in temp_path.glob('*'):
+				if file.is_file():
+					try:
+						file.unlink()
+						files_removed += 1
+						debug(f"   Removed: {file.name}")
+					except Exception as e:
+						debug(f"   Failed to remove {file.name}: {e}")
+			
+			debug(f"ðŸ§¹ Local temp cleanup: removed {files_removed} files from {temp_path}")
+			return files_removed
+			
+		except Exception as e:
+			debug(f"âŒ Local temp cleanup error: {e}")
+			return 0
+	
+	def cleanup_pi_files(self, keep_count=10):
+		"""Clean Pi watched folder, keeping only recent files"""
+		try:
+			# Prepare JSON data
+			data = {
+				'keep_count': keep_count
+			}
+			
+			# Use WebclientDAT request method for cleanup
+			connection_id = self.webClient.request(
+				f'{self.server_url}/cleanup_old_files',
+				'POST',
+				header={'Content-Type': 'application/json'},
+				data=json.dumps(data)
+			)
+			
+			debug(f"ðŸ§¹ Pi cleanup request sent (keep {keep_count} files)...")
+			
+			# Handle response
+			self._handle_response("Pi files cleanup", connection_id)
+			
+			return keep_count  # Return the keep count for now
+			
+		except Exception as e:
+			debug(f"âŒ Pi cleanup error: {e}")
+			return 0
+	
+	
+	def get_latest_pi_file(self):
+		"""Get info about the latest file on Pi"""
+		try:
+			connection_id = self.webClient.request(
+				f'{self.server_url}/latest_file',
+				'GET'
+			)
+			
+			debug(f"ðŸ“„ Getting latest Pi file info...")
+			
+			# Handle response
+			self._handle_response("Get latest Pi file", connection_id)
+			
+			return True
+			
+		except Exception as e:
+			debug(f"âŒ Get latest Pi file error: {e}")
+			return False
+		
+
 	def _handle_response(self, operation_name, connection_id):
 		"""Handle WebclientDAT response using onResponse callback"""
 		debug(f"Request sent for {operation_name} with connection ID: {connection_id}")
@@ -284,6 +424,31 @@ class RpiEinkyUploadExt:
 			debug(f"TOP '{top_op}' not found")
 			return False
 	
+	def CleanupAll(self, keep_files=1):
+		"""Clean both local temp and Pi folders"""
+		return self.cleanup_folders(keep_pi_files=keep_files, clean_local_temp=True)
+	
+	def CleanupAllAggressive(self):
+		"""Remove ALL files from both local temp and Pi folders"""
+		return self.cleanup_folders(keep_pi_files=0, clean_local_temp=True)
+	
+	def CleanupLocalOnly(self):
+		"""Clean only local temp folder"""
+		return self.cleanup_local_temp()
+	
+	def CleanupPiOnly(self, keep_files=1):
+		"""Clean only Pi watched folder"""
+		return self.cleanup_pi_files(keep_files)
+	
+	def onParCleardisplay(self):
+		debug("Clearing display screen")
+		self.clear_display_screen()
+
+	def ClearDisplayScreen(self):
+		"""Actually clear the e-ink display screen"""
+		return self.clear_display_screen()
+
+	
 	# Properties for easy access
 	@property
 	def is_connected(self):
@@ -299,8 +464,8 @@ class RpiEinkyUploadExt:
 		# This method should be called by the WebclientDAT's onResponse callback
 		# response object contains: id, url, statusCode, statusReason, data
 		try:
-			if statusCode == 200:
-				debug(f"✅ Request successful (ID: {id})")
+			if statusCode['code'] == 200:
+				debug(f"âœ… Request successful (ID: {id})")
 				if data:
 					try:
 						response_data = json.loads(data)
@@ -311,16 +476,13 @@ class RpiEinkyUploadExt:
 					except:
 						debug(f"   Response: {data}")
 				
-				# Update status display if available
-				status_display = self.ownerComp.op('status_display')
-				if status_display:
-					status_display.text = f"Request successful\n{data}"
+				ui.clipboard = f"Request successful\n{data}"
 			else:
-				debug(f"❌ Request failed: {statusCode} - {headerDict['statusReason']}")
-				status_display = self.ownerComp.op('status_display')
-				if status_display:
-					status_display.text = f"Request failed: {statusCode}"
+				debug(f"âŒ Request failed: {statusCode['code']} - {headerDict}")
+				ui.clipboard = f"Request failed: {statusCode['code']} - {headerDict}"
 		except Exception as e:
-			debug(f"❌ Response handling error: {e}")
+			debug(e)
+			debug(f"âŒ Response handling error: {e}")
+			ui.clipboard = f"Response handling error: {e}"
 
 
