@@ -240,11 +240,16 @@ class RpiEinkyUploadExt:
 				fileTypes=['jpg', 'png', 'txt', 'pdf', 'bmp', 'gif']
 			)
 			
-			if filepath:
-				return self.upload_file(filepath)
-			else:
-				debug("No file selected")
-				return False
+			self.movieFileIn.par.file.expr = f'"{filepath}"'
+			# save to temp folder
+			_out = self.ownerComp.op('null_img_send')
+			_newfile = _out.save(self._get_temp_file_path('temp.png'))
+
+			# if _newfile:
+			# 	return self.upload_file(_newfile)
+			# else:
+			# 	debug("No file selected")
+			# 	return False
 				
 		except Exception as e:
 			debug(f"File dialog error: {e}")
