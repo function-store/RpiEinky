@@ -6,6 +6,8 @@ import time
 import logging
 import argparse
 import signal
+import socket
+import subprocess
 from pathlib import Path
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
@@ -27,6 +29,62 @@ logger = logging.getLogger(__name__)
 # Global variables for exit handling
 exit_requested = False
 clear_on_exit_requested = True
+
+def get_ip_address():
+    """Get the device's IP address"""
+    try:
+        # Method 1: Try to get IP by connecting to a remote address (doesn't actually send data)
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(0)
+        try:
+            # Connect to a remote address (8.8.8.8 is Google's DNS)
+            s.connect(('8.8.8.8', 80))
+            ip = s.getsockname()[0]
+            s.close()
+            return ip
+        except Exception:
+            s.close()
+    except Exception:
+        pass
+    
+    try:
+        # Method 2: Use hostname command
+        result = subprocess.run(['hostname', '-I'], capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            ips = result.stdout.strip().split()
+            if ips:
+                return ips[0]  # Return first IP address
+    except Exception:
+        pass
+    
+    try:
+        # Method 3: Parse ip route command
+        result = subprocess.run(['ip', 'route', 'get', '1'], capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            lines = result.stdout.split('\n')
+            for line in lines:
+                if 'src' in line:
+                    parts = line.split()
+                    try:
+                        src_idx = parts.index('src')
+                        if src_idx + 1 < len(parts):
+                            return parts[src_idx + 1]
+                    except (ValueError, IndexError):
+                        continue
+    except Exception:
+        pass
+    
+    try:
+        # Method 4: Get hostname and resolve it
+        hostname = socket.gethostname()
+        ip = socket.gethostbyname(hostname)
+        if ip != '127.0.0.1':
+            return ip
+    except Exception:
+        pass
+    
+    # Fallback
+    return "IP not found"
 
 def signal_handler_clear_exit(signum, frame):
     """Handle Ctrl+C - exit with display clearing"""
@@ -399,6 +457,49 @@ class EinkDisplayHandler(FileSystemEventHandler):
                 # Don't retry error display to avoid infinite loop
                 logger.info("Display reinitialized after error display failure")
     
+    def display_ip_address(self):
+        """Display device IP address on e-ink"""
+        try:
+            ip_address = get_ip_address()
+            hostname = socket.gethostname()
+            
+            display_image = Image.new('RGB', (self.epd.height, self.epd.width), self.epd.WHITE)
+            draw = ImageDraw.Draw(display_image)
+            
+            # Title
+            draw.rectangle([(0, 0), (self.epd.height, 35)], fill=self.epd.BLACK)
+            draw.text((5, 10), "Device Information", font=self.font_large, fill=self.epd.WHITE)
+            
+            # Hostname
+            y_pos = 50
+            draw.text((5, y_pos), "Hostname:", font=self.font_medium, fill=self.epd.BLACK)
+            y_pos += 25
+            draw.text((5, y_pos), hostname, font=self.font_medium, fill=self.epd.RED)
+            
+            # IP Address
+            y_pos += 35
+            draw.text((5, y_pos), "IP Address:", font=self.font_medium, fill=self.epd.BLACK)
+            y_pos += 25
+            draw.text((5, y_pos), ip_address, font=self.font_large, fill=self.epd.RED)
+            
+            # Additional info
+            y_pos += 40
+            draw.text((5, y_pos), f"Time: {time.strftime('%Y-%m-%d %H:%M:%S')}", 
+                     font=self.font_small, fill=self.epd.BLACK)
+            
+            # Instructions
+            y_pos += 25
+            draw.text((5, y_pos), "Connect to this IP address", font=self.font_small, fill=self.epd.BLACK)
+            y_pos += 15
+            draw.text((5, y_pos), "for file uploads", font=self.font_small, fill=self.epd.BLACK)
+            
+            self.display_buffer(display_image)
+            logger.info(f"Displayed IP address: {ip_address} (hostname: {hostname})")
+            
+        except Exception as e:
+            logger.error(f"Error displaying IP address: {e}")
+            self.display_error("IP Display", str(e))
+    
     def resize_image_to_fit(self, image):
         """Resize image to fit display while maintaining aspect ratio"""
         display_width = self.epd.width
@@ -435,7 +536,8 @@ def main():
         description='E-ink File Display Monitor for Raspberry Pi with Waveshare 2.15" display',
         epilog='''
 Examples:
-  %(prog)s                                    # Monitor ~/watched_files with default settings
+  %(prog)s                                    # Monitor ~/watched_files, show IP on startup
+  %(prog)s --show-ip                          # Display device IP address and exit
   %(prog)s -d image.jpg                       # Display image.jpg on startup, then monitor
   %(prog)s -f ~/my_files --clear-start        # Monitor ~/my_files, clear screen on start
   %(prog)s --no-clear-exit                    # Don't clear screen when exiting
@@ -447,6 +549,8 @@ Examples:
                        help='Folder to monitor for files (default: ~/watched_files)')
     parser.add_argument('--display-file', '-d', 
                        help='Display this file on startup and wait for new files')
+    parser.add_argument('--show-ip', action='store_true',
+                       help='Display device IP address and exit')
     parser.add_argument('--no-clear-exit', action='store_true',
                        help='Do not clear screen on exit')
     parser.add_argument('--clear-start', action='store_true',
@@ -455,6 +559,26 @@ Examples:
                        help='Display in normal orientation (not upside-down)')
     
     args = parser.parse_args()
+    
+    # Handle IP display option (show IP and exit)
+    if args.show_ip:
+        try:
+            # Initialize display just for IP display
+            epd = epd2in15g.EPD()
+            epd.init()
+            
+            # Create temporary handler just to display IP
+            temp_handler = EinkDisplayHandler(clear_on_start=False, clear_on_exit=False)
+            temp_handler.display_upside_down = not args.normal_orientation
+            temp_handler.display_ip_address()
+            
+            # Clean up
+            epd.sleep()
+            logger.info("IP address displayed. Exiting.")
+            return
+        except Exception as e:
+            logger.error(f"Error displaying IP address: {e}")
+            return
     
     # Configuration
     WATCHED_FOLDER = os.path.expanduser(args.folder)
@@ -507,17 +631,39 @@ Examples:
                 draw.text((5, 50), f"File: {display_file_path.name}", font=handler.font_small, fill=handler.epd.BLACK)
                 handler.display_buffer(display_image)
         else:
-            # Display initial message if no file provided
+            # Display initial message with IP address if no file provided
+            ip_address = get_ip_address()
+            hostname = socket.gethostname()
+            
             display_image = Image.new('RGB', (handler.epd.height, handler.epd.width), handler.epd.WHITE)
             draw = ImageDraw.Draw(display_image)
             
+            # Title
             draw.rectangle([(0, 0), (handler.epd.height, 35)], fill=handler.epd.BLACK)
             draw.text((5, 10), "E-ink File Monitor", font=handler.font_large, fill=handler.epd.WHITE)
             
-            draw.text((5, 50), "Monitoring folder:", font=handler.font_medium, fill=handler.epd.BLACK)
-            draw.text((5, 70), str(handler.watched_folder), font=handler.font_small, fill=handler.epd.BLACK)
+            # IP Address (most important info)
+            y_pos = 45
+            draw.text((5, y_pos), "IP Address:", font=handler.font_medium, fill=handler.epd.BLACK)
+            y_pos += 20
+            draw.text((5, y_pos), ip_address, font=handler.font_large, fill=handler.epd.RED)
             
-            draw.text((5, 100), "Add files to display them!", font=handler.font_medium, fill=handler.epd.RED)
+            # Hostname
+            y_pos += 30
+            draw.text((5, y_pos), f"Host: {hostname}", font=handler.font_small, fill=handler.epd.BLACK)
+            
+            # Monitoring info
+            y_pos += 25
+            draw.text((5, y_pos), "Monitoring:", font=handler.font_small, fill=handler.epd.BLACK)
+            y_pos += 15
+            folder_path = str(handler.watched_folder)
+            if len(folder_path) > 30:
+                folder_path = "..." + folder_path[-27:]
+            draw.text((5, y_pos), folder_path, font=handler.font_small, fill=handler.epd.BLACK)
+            
+            # Instructions
+            y_pos += 25
+            draw.text((5, y_pos), "Ready for file uploads!", font=handler.font_medium, fill=handler.epd.RED)
             
             handler.display_buffer(display_image)
         

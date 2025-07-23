@@ -3,7 +3,7 @@
 # E-ink Display System Control Script
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VENV_PATH="$SCRIPT_DIR/eink_env"
+VENV_PATH="$HOME/eink_env"
 DISPLAY_PID_FILE="/tmp/eink_display.pid"
 SERVER_PID_FILE="/tmp/eink_server.pid"
 
@@ -22,6 +22,33 @@ print_status() {
 start_services() {
     print_status
     echo -e "${GREEN}🚀 Starting E-ink Display System...${NC}"
+    
+    # Check if services are already running and restart if needed
+    ALREADY_RUNNING=false
+    
+    # Check display monitor
+    if [ -f $DISPLAY_PID_FILE ]; then
+        DISPLAY_PID=$(cat $DISPLAY_PID_FILE)
+        if kill -0 $DISPLAY_PID 2>/dev/null; then
+            ALREADY_RUNNING=true
+        fi
+    fi
+    
+    # Check upload server
+    if [ -f $SERVER_PID_FILE ]; then
+        SERVER_PID=$(cat $SERVER_PID_FILE)
+        if kill -0 $SERVER_PID 2>/dev/null; then
+            ALREADY_RUNNING=true
+        fi
+    fi
+    
+    # If already running, restart instead
+    if [ "$ALREADY_RUNNING" = true ]; then
+        echo -e "${YELLOW}⚡ Services already running - restarting...${NC}"
+        stop_services
+        sleep 2
+        echo -e "${GREEN}🚀 Starting fresh services...${NC}"
+    fi
     
     # Check if virtual environment exists
     if [ ! -d "$VENV_PATH" ]; then
@@ -149,24 +176,26 @@ restart_services() {
 
 show_help() {
     print_status
-    echo "Usage: $0 {start|stop|restart|status|logs|help}"
+    echo "Usage: $0 [command]"
     echo ""
     echo "Commands:"
-    echo "  start    - Start both display monitor and upload server"
-    echo "  stop     - Stop both services"
-    echo "  restart  - Restart both services"
-    echo "  status   - Show service status"
-    echo "  logs     - Show recent logs"
-    echo "  help     - Show this help message"
+    echo "  (no args) - Start both services (default action)"
+    echo "  start     - Start both services (automatically restarts if already running)"
+    echo "  stop      - Stop both services"
+    echo "  restart   - Restart both services (same as start when running)"
+    echo "  status    - Show service status"
+    echo "  logs      - Show recent logs"
+    echo "  help      - Show this help message"
     echo ""
     echo "Examples:"
-    echo "  $0 start     # Start the system"
+    echo "  $0           # Start the system (default)"
+    echo "  $0 start     # Start the system (or restart if running)"
     echo "  $0 status    # Check if services are running"
     echo "  $0 stop      # Stop the system"
 }
 
 # Main script logic
-case "$1" in
+case "${1:-start}" in
     start)
         start_services
         ;;

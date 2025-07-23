@@ -101,6 +101,10 @@ source eink_env/bin/activate
 python test_display_system.py
 ```
 
+### Step 5: Additional Steps
+See [🌐 Raspberry Network Setup (Optional)](#-raspberry-network-setup-optional) for instructions how to set up a static IP.
+
+
 ## 🚀 Usage
 
 ### Basic Usage
@@ -824,6 +828,129 @@ sudo journalctl -u eink-display.service -f
 
 # Service status
 sudo systemctl status eink-display.service
+```
+
+## 🌐 Raspberry Network Setup (Optional)
+
+Setting a static IP address is recommended for the TouchDesigner integration and remote access to your e-ink display system.
+
+### Method 1: Using nmcli (Recommended for Raspberry Pi OS Lite)
+
+NetworkManager's command line interface is the modern way to configure network settings on Raspberry Pi OS Lite.
+
+1. **Check current connection:**
+   ```bash
+   # List all network connections
+   nmcli connection show
+   
+   # Check current IP configuration
+   ip addr show
+   ```
+
+2. **Set static IP using nmcli:**
+   ```bash
+   # Replace 'preconfigured' with your connection name from step 1
+   # Replace IP addresses with your desired static IP and network settings
+   sudo nmcli con mod preconfigured ipv4.addresses 192.168.1.100/24
+   sudo nmcli con mod preconfigured ipv4.gateway 192.168.1.1
+   sudo nmcli con mod preconfigured ipv4.dns "192.168.1.1,8.8.8.8"
+   sudo nmcli con mod preconfigured ipv4.method manual
+   
+   # Apply changes
+   sudo nmcli con down preconfigured && sudo nmcli con up preconfigured
+   ```
+
+3. **Verify the configuration:**
+   ```bash
+   ip addr show
+   ping google.com
+   ```
+
+### Method 2: Using dhcpcd.conf (Traditional Method)
+
+This method works on all Raspberry Pi OS versions:
+
+1. **Edit the dhcpcd configuration:**
+   ```bash
+   sudo nano /etc/dhcpcd.conf
+   ```
+
+2. **Add static IP configuration at the end of the file:**
+   ```bash
+   # Static IP configuration for eth0 (Ethernet)
+   interface eth0
+   static ip_address=192.168.1.100/24
+   static routers=192.168.1.1
+   static domain_name_servers=192.168.1.1 8.8.8.8
+   
+   # For WiFi, use wlan0 instead:
+   # interface wlan0
+   # static ip_address=192.168.1.100/24
+   # static routers=192.168.1.1
+   # static domain_name_servers=192.168.1.1 8.8.8.8
+   ```
+
+3. **Restart networking:**
+   ```bash
+   sudo systemctl restart dhcpcd
+   # Or reboot
+   sudo reboot
+   ```
+
+### Method 3: Using raspi-config (GUI Method)
+
+For a user-friendly approach:
+
+1. **Open Raspberry Pi configuration:**
+   ```bash
+   sudo raspi-config
+   ```
+
+2. **Navigate to network settings:**
+   - Select "Advanced Options"
+   - Select "Network Config"
+   - Choose your preferred network configuration method
+
+### Network Configuration Tips
+
+**Finding your network settings:**
+```bash
+# Find your current gateway (router IP)
+ip route | grep default
+
+# Find your current DNS servers
+cat /etc/resolv.conf
+
+# Find available network interfaces
+ip link show
+```
+
+**Common network ranges:**
+- `192.168.1.x/24` (gateway: 192.168.1.1)
+- `192.168.0.x/24` (gateway: 192.168.0.1)
+- `10.0.0.x/24` (gateway: 10.0.0.1)
+
+**Recommended static IP setup for e-ink display:**
+- **Static IP**: Choose an IP outside your router's DHCP range (e.g., 192.168.1.100)
+- **Gateway**: Your router's IP (usually 192.168.1.1 or 192.168.0.1)
+- **DNS**: Your router's IP + public DNS (8.8.8.8, 1.1.1.1)
+
+**Why set a static IP?**
+- **TouchDesigner integration**: Consistent IP for HTTP uploads
+- **Remote access**: SSH and file management from other devices
+- **Service reliability**: No IP changes after router reboots
+- **Network troubleshooting**: Easier to remember and access
+
+**Testing connectivity:**
+```bash
+# Test local network
+ping 192.168.1.1
+
+# Test internet
+ping google.com
+
+# Test DNS resolution
+nslookup google.com
 ```
 
 ## 🤝 Contributing
