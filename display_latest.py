@@ -138,19 +138,20 @@ class EinkDisplayHandler(FileSystemEventHandler):
     def load_settings(self):
         """Load settings from the settings file"""
         try:
-            settings_file = self.watched_folder / '.settings.json'
+            # Use the same path as the upload server
+            settings_file = Path(os.path.expanduser('~/watched_files')) / '.settings.json'
             if settings_file.exists():
                 import json
                 with open(settings_file, 'r') as f:
                     settings = json.load(f)
                     self.auto_display_uploads = settings.get('auto_display_upload', True)
                     self.image_crop_mode = settings.get('image_crop_mode', 'center_crop')
-                    logger.info(f"Settings loaded - Auto-display: {self.auto_display_uploads}, Crop mode: {self.image_crop_mode}")
+                    logger.info(f"Settings loaded from {settings_file} - Auto-display: {self.auto_display_uploads}, Crop mode: {self.image_crop_mode}")
             else:
                 # Default settings
                 self.auto_display_uploads = True
                 self.image_crop_mode = 'center_crop'
-                logger.info("Using default settings - Auto-display: True, Crop mode: center_crop")
+                logger.info(f"Settings file not found at {settings_file}, using defaults - Auto-display: True, Crop mode: center_crop")
         except Exception as e:
             logger.error(f"Error loading settings: {e}")
             # Fallback to defaults
@@ -161,6 +162,20 @@ class EinkDisplayHandler(FileSystemEventHandler):
         """Reload settings from file (useful when settings change)"""
         self.load_settings()
         logger.info(f"Settings reloaded - Auto-display: {self.auto_display_uploads}, Crop mode: {self.image_crop_mode}")
+    
+    def get_latest_file(self):
+        """Get the most recent file in the watched folder"""
+        try:
+            files = [f for f in self.watched_folder.glob('*') if f.is_file() and not f.name.startswith('.')]
+            if not files:
+                return None
+            
+            # Sort by modification time (latest first)
+            latest_file = max(files, key=lambda f: f.stat().st_mtime)
+            return latest_file
+        except Exception as e:
+            logger.error(f"Error finding latest file: {e}")
+            return None
     
     def validate_file(self, file_path):
         """Validate that file is complete and readable"""
@@ -240,7 +255,11 @@ class EinkDisplayHandler(FileSystemEventHandler):
             logger.error(f"File validation failed: {file_path.name}")
             return
         
+        # Reload settings to get the latest auto-display setting
+        self.reload_settings()
+        
         # Check if auto-display is enabled
+        logger.info(f"Auto-display setting: {self.auto_display_uploads}")
         if self.auto_display_uploads:
             try:
                 self.display_file(file_path)
@@ -542,6 +561,48 @@ class EinkDisplayHandler(FileSystemEventHandler):
             logger.error(f"Error displaying IP address: {e}")
             self.display_error("IP Display", str(e))
     
+    def display_welcome_screen(self):
+        """Display welcome screen with IP address and web interface information"""
+        try:
+            ip_address = get_ip_address()
+            hostname = socket.gethostname()
+            
+            display_image = Image.new('RGB', (self.epd.height, self.epd.width), self.epd.WHITE)
+            draw = ImageDraw.Draw(display_image)
+            
+            # Title
+            draw.rectangle([(0, 0), (self.epd.height, 35)], fill=self.epd.BLACK)
+            draw.text((5, 10), "E-ink File Monitor", font=self.font_large, fill=self.epd.WHITE)
+            
+            # IP Address and Web Interface (consolidated)
+            y_pos = 45
+            draw.text((5, y_pos), "Web Interface:", font=self.font_medium, fill=self.epd.BLACK)
+            y_pos += 20
+            web_url = f"http://{ip_address}:5000"
+            draw.text((5, y_pos), web_url, font=self.font_medium, fill=self.epd.RED)
+            
+            # Hostname and folder (consolidated)
+            y_pos += 25
+            draw.text((5, y_pos), f"Host: {hostname}", font=self.font_small, fill=self.epd.BLACK)
+            
+            # Folder path (shortened)
+            y_pos += 15
+            folder_path = str(self.watched_folder)
+            if len(folder_path) > 25:
+                folder_path = "..." + folder_path[-22:]
+            draw.text((5, y_pos), f"Folder: {folder_path}", font=self.font_small, fill=self.epd.BLACK)
+            
+            # Status message
+            y_pos += 20
+            draw.text((5, y_pos), "Ready for uploads!", font=self.font_medium, fill=self.epd.RED)
+            
+            self.display_buffer(display_image)
+            logger.info(f"Displayed welcome screen - IP: {ip_address}, Web: {web_url}")
+            
+        except Exception as e:
+            logger.error(f"Error displaying welcome screen: {e}")
+            self.display_error("Welcome Screen", str(e))
+    
     def resize_image_to_fit(self, image):
         """Resize image to fit display while maintaining aspect ratio, with configurable crop mode"""
         display_width = self.epd.width
@@ -620,7 +681,8 @@ def main():
         description='E-ink File Display Monitor for Raspberry Pi with Waveshare 2.15" display',
         epilog='''
 Examples:
-  %(prog)s                                    # Monitor ~/watched_files, show IP on startup
+  %(prog)s                                    # Monitor ~/watched_files, show welcome screen
+  %(prog)s --latest-file                      # Display latest file in folder on startup
   %(prog)s --show-ip                          # Display device IP address and exit
   %(prog)s -d image.jpg                       # Display image.jpg on startup, then monitor
   %(prog)s -f ~/my_files --clear-start        # Monitor ~/my_files, clear screen on start
@@ -633,6 +695,8 @@ Examples:
                        help='Folder to monitor for files (default: ~/watched_files)')
     parser.add_argument('--display-file', '-d', 
                        help='Display this file on startup and wait for new files')
+    parser.add_argument('--latest-file', '-l', action='store_true',
+                       help='Display the latest file in watched folder on startup')
     parser.add_argument('--show-ip', action='store_true',
                        help='Display device IP address and exit')
     parser.add_argument('--no-clear-exit', action='store_true',
@@ -714,42 +778,18 @@ Examples:
                 draw.text((5, 10), "File Not Found", font=handler.font_large, fill=handler.epd.WHITE)
                 draw.text((5, 50), f"File: {display_file_path.name}", font=handler.font_small, fill=handler.epd.BLACK)
                 handler.display_buffer(display_image)
+        elif args.latest_file:
+            # Display the latest file in the watched folder
+            latest_file = handler.get_latest_file()
+            if latest_file:
+                logger.info(f"Displaying latest file: {latest_file}")
+                handler.display_file(latest_file)
+            else:
+                logger.info("No files found in watched folder, showing welcome screen")
+                handler.display_welcome_screen()
         else:
-            # Display initial message with IP address if no file provided
-            ip_address = get_ip_address()
-            hostname = socket.gethostname()
-            
-            display_image = Image.new('RGB', (handler.epd.height, handler.epd.width), handler.epd.WHITE)
-            draw = ImageDraw.Draw(display_image)
-            
-            # Title
-            draw.rectangle([(0, 0), (handler.epd.height, 35)], fill=handler.epd.BLACK)
-            draw.text((5, 10), "E-ink File Monitor", font=handler.font_large, fill=handler.epd.WHITE)
-            
-            # IP Address (most important info)
-            y_pos = 45
-            draw.text((5, y_pos), "IP Address:", font=handler.font_medium, fill=handler.epd.BLACK)
-            y_pos += 20
-            draw.text((5, y_pos), ip_address, font=handler.font_large, fill=handler.epd.RED)
-            
-            # Hostname
-            y_pos += 30
-            draw.text((5, y_pos), f"Host: {hostname}", font=handler.font_small, fill=handler.epd.BLACK)
-            
-            # Monitoring info
-            y_pos += 25
-            draw.text((5, y_pos), "Monitoring:", font=handler.font_small, fill=handler.epd.BLACK)
-            y_pos += 15
-            folder_path = str(handler.watched_folder)
-            if len(folder_path) > 30:
-                folder_path = "..." + folder_path[-27:]
-            draw.text((5, y_pos), folder_path, font=handler.font_small, fill=handler.epd.BLACK)
-            
-            # Instructions
-            y_pos += 25
-            draw.text((5, y_pos), "Ready for file uploads!", font=handler.font_medium, fill=handler.epd.RED)
-            
-            handler.display_buffer(display_image)
+            # Display welcome screen with IP address and web interface info
+            handler.display_welcome_screen()
         
         # Keep the script running until exit is requested
         if signal_handlers_registered:
