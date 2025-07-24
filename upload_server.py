@@ -1,24 +1,30 @@
 #!/usr/bin/env python3
 """
-Simple HTTP upload server for TouchDesigner to e-ink display system.
-Receives files via HTTP POST and saves them to the watched folder for immediate display.
+Web management server for e-ink display system.
+Provides both API endpoints and web interface for file management.
 """
 import os
 import time
+import json
+import base64
 from pathlib import Path
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template, send_from_directory, url_for
 from werkzeug.utils import secure_filename
+from PIL import Image
 import logging
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder='templates', static_folder='static')
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
+
+
 
 # Configuration
 UPLOAD_FOLDER = os.path.expanduser('~/watched_files')
+THUMBNAILS_FOLDER = os.path.join(UPLOAD_FOLDER, '.thumbnails')
 ALLOWED_EXTENSIONS = {
     'txt', 'md', 'py', 'js', 'html', 'css',  # Text files
     'jpg', 'jpeg', 'png', 'bmp', 'gif',      # Images
@@ -26,14 +32,101 @@ ALLOWED_EXTENSIONS = {
     'json', 'xml', 'csv'                     # Data files
 }
 
+# Image extensions for thumbnail generation
+IMAGE_EXTENSIONS = {'jpg', 'jpeg', 'png', 'bmp', 'gif'}
+
 def allowed_file(filename):
     """Check if file extension is allowed"""
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 def ensure_upload_folder():
-    """Create upload folder if it doesn't exist"""
+    """Create upload folder and thumbnails folder if they don't exist"""
     Path(UPLOAD_FOLDER).mkdir(parents=True, exist_ok=True)
+    Path(THUMBNAILS_FOLDER).mkdir(parents=True, exist_ok=True)
+
+def get_file_type(filename):
+    """Determine file type category"""
+    ext = filename.rsplit('.', 1)[1].lower() if '.' in filename else ''
+    if ext in IMAGE_EXTENSIONS:
+        return 'image'
+    elif ext in {'txt', 'md', 'py', 'js', 'html', 'css', 'json', 'xml', 'csv'}:
+        return 'text'
+    elif ext == 'pdf':
+        return 'pdf'
+    else:
+        return 'other'
+
+def generate_thumbnail(filepath, filename):
+    """Generate thumbnail for image files"""
+    try:
+        file_ext = filename.rsplit('.', 1)[1].lower() if '.' in filename else ''
+        if file_ext not in IMAGE_EXTENSIONS:
+            return None
+        
+        # Create thumbnail filename
+        name_without_ext = filename.rsplit('.', 1)[0]
+        thumb_filename = f"{name_without_ext}_thumb.jpg"
+        thumb_path = os.path.join(THUMBNAILS_FOLDER, thumb_filename)
+        
+        # Skip if thumbnail already exists and is newer than original
+        if os.path.exists(thumb_path):
+            if os.path.getmtime(thumb_path) >= os.path.getmtime(filepath):
+                return thumb_filename
+        
+        # Generate thumbnail
+        with Image.open(filepath) as img:
+            # Convert to RGB if necessary (for PNG with transparency)
+            if img.mode in ('RGBA', 'LA', 'P'):
+                # Create white background
+                rgb_img = Image.new('RGB', img.size, (255, 255, 255))
+                if img.mode == 'P':
+                    img = img.convert('RGBA')
+                rgb_img.paste(img, mask=img.split()[-1] if img.mode == 'RGBA' else None)
+                img = rgb_img
+            elif img.mode != 'RGB':
+                img = img.convert('RGB')
+            
+            # Create thumbnail (max 200x200)
+            img.thumbnail((200, 200), Image.Resampling.LANCZOS)
+            img.save(thumb_path, 'JPEG', quality=85)
+            
+        logger.info(f"Generated thumbnail: {thumb_filename}")
+        return thumb_filename
+        
+    except Exception as e:
+        logger.error(f"Thumbnail generation failed for {filename}: {e}")
+        return None
+
+def display_file_on_eink(filename):
+    """Display a specific file on the e-ink display"""
+    try:
+        # Import display handler
+        import sys
+        from pathlib import Path as PathlibPath
+        
+        # Add script directory to path to import display_latest
+        script_dir = PathlibPath(__file__).parent
+        sys.path.insert(0, str(script_dir))
+        
+        from display_latest import EinkDisplayHandler
+        
+        # Create handler and display file
+        handler = EinkDisplayHandler(clear_on_start=False, clear_on_exit=False)
+        file_path = PathlibPath(UPLOAD_FOLDER) / filename
+        
+        if not file_path.exists():
+            raise FileNotFoundError(f"File not found: {filename}")
+        
+        handler.display_file(file_path)
+        handler.cleanup(force_clear=False)  # Don't clear display after showing
+        
+        logger.info(f"Displayed file on e-ink: {filename}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Failed to display file {filename}: {e}")
+        return False
 
 @app.route('/upload', methods=['POST', 'PUT'])
 def upload_file():
@@ -60,6 +153,9 @@ def upload_file():
                 # Save file to watched folder
                 filepath = os.path.join(UPLOAD_FOLDER, filename)
                 file.save(filepath)
+                
+                # Generate thumbnail if it's an image
+                generate_thumbnail(filepath, filename)
                 
                 logger.info(f"File uploaded (POST): {filename}")
                 return jsonify({
@@ -102,6 +198,9 @@ def upload_file():
             with open(filepath, 'wb') as f:
                 f.write(request.data)
             
+            # Generate thumbnail if it's an image
+            generate_thumbnail(filepath, filename)
+            
             logger.info(f"File uploaded (PUT): {filename}")
             return jsonify({
                 'message': 'File uploaded successfully',
@@ -134,6 +233,9 @@ def upload_text():
         # Write text content
         with open(filepath, 'w', encoding='utf-8') as f:
             f.write(content)
+        
+        # Generate thumbnail if applicable (text files don't get thumbnails)
+        generate_thumbnail(filepath, filename)
         
         logger.info(f"Text uploaded: {filename}")
         return jsonify({
@@ -269,6 +371,172 @@ def clear_screen():
         
     except Exception as e:
         logger.error(f"Clear screen error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+# ============ NEW API ROUTES ============
+
+@app.route('/display_file', methods=['POST'])
+def display_file():
+    """Display a specific file on the e-ink display"""
+    try:
+        data = request.get_json()
+        if not data or 'filename' not in data:
+            return jsonify({'error': 'Filename not provided'}), 400
+        
+        filename = data['filename']
+        success = display_file_on_eink(filename)
+        
+        if success:
+            return jsonify({
+                'message': f'File displayed successfully: {filename}'
+            }), 200
+        else:
+            return jsonify({'error': 'Failed to display file'}), 500
+            
+    except Exception as e:
+        logger.error(f"Display file error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/delete_file', methods=['POST'])
+def delete_file():
+    """Delete a specific file"""
+    try:
+        data = request.get_json()
+        if not data or 'filename' not in data:
+            return jsonify({'error': 'Filename not provided'}), 400
+        
+        filename = secure_filename(data['filename'])
+        filepath = os.path.join(UPLOAD_FOLDER, filename)
+        
+        if not os.path.exists(filepath):
+            return jsonify({'error': 'File not found'}), 404
+        
+        # Delete main file
+        os.remove(filepath)
+        
+        # Delete thumbnail if it exists
+        name_without_ext = filename.rsplit('.', 1)[0]
+        thumb_filename = f"{name_without_ext}_thumb.jpg"
+        thumb_path = os.path.join(THUMBNAILS_FOLDER, thumb_filename)
+        if os.path.exists(thumb_path):
+            os.remove(thumb_path)
+        
+        logger.info(f"Deleted file: {filename}")
+        return jsonify({
+            'message': f'File deleted successfully: {filename}'
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Delete file error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/delete_multiple', methods=['POST'])
+def delete_multiple_files():
+    """Delete multiple files"""
+    try:
+        data = request.get_json()
+        if not data or 'filenames' not in data:
+            return jsonify({'error': 'Filenames not provided'}), 400
+        
+        filenames = data['filenames']
+        deleted_files = []
+        errors = []
+        
+        for filename in filenames:
+            try:
+                filename = secure_filename(filename)
+                filepath = os.path.join(UPLOAD_FOLDER, filename)
+                
+                if os.path.exists(filepath):
+                    os.remove(filepath)
+                    deleted_files.append(filename)
+                    
+                    # Delete thumbnail if it exists
+                    name_without_ext = filename.rsplit('.', 1)[0]
+                    thumb_filename = f"{name_without_ext}_thumb.jpg"
+                    thumb_path = os.path.join(THUMBNAILS_FOLDER, thumb_filename)
+                    if os.path.exists(thumb_path):
+                        os.remove(thumb_path)
+                else:
+                    errors.append(f"File not found: {filename}")
+                    
+            except Exception as e:
+                errors.append(f"Error deleting {filename}: {str(e)}")
+        
+        logger.info(f"Deleted {len(deleted_files)} files")
+        return jsonify({
+            'message': f'Deleted {len(deleted_files)} files',
+            'deleted_files': deleted_files,
+            'errors': errors if errors else None
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Delete multiple files error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/thumbnails/<filename>')
+def serve_thumbnail(filename):
+    """Serve thumbnail images"""
+    try:
+        return send_from_directory(THUMBNAILS_FOLDER, filename)
+    except Exception:
+        # Return a default image or 404
+        return '', 404
+
+@app.route('/files/<filename>')
+def serve_file(filename):
+    """Serve uploaded files"""
+    try:
+        return send_from_directory(UPLOAD_FOLDER, filename)
+    except Exception:
+        return '', 404
+
+# ============ WEB INTERFACE ROUTES ============
+
+@app.route('/')
+def index():
+    """Main web interface"""
+    return render_template('index.html')
+
+@app.route('/api/files')
+def api_list_files():
+    """Enhanced file listing with thumbnails and metadata"""
+    try:
+        folder = Path(UPLOAD_FOLDER)
+        files = [f for f in folder.glob('*') if f.is_file() and not f.name.startswith('.')]
+        
+        if not files:
+            return jsonify({'files': []}), 200
+        
+        # Sort by modification time (latest first)
+        files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
+        
+        file_list = []
+        for file in files:
+            file_info = {
+                'filename': file.name,
+                'size': file.stat().st_size,
+                'modified': file.stat().st_mtime,
+                'type': get_file_type(file.name),
+                'thumbnail': None
+            }
+            
+            # Generate thumbnail for images
+            if file_info['type'] == 'image':
+                thumb_filename = generate_thumbnail(str(file), file.name)
+                if thumb_filename:
+                    file_info['thumbnail'] = url_for('serve_thumbnail', filename=thumb_filename)
+            
+            file_list.append(file_info)
+        
+        logger.info(f"Listed {len(file_list)} files with metadata")
+        return jsonify({
+            'files': file_list,
+            'total_files': len(file_list)
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Enhanced list files error: {e}")
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':

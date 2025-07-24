@@ -1,9 +1,20 @@
 # E-Ink File Display System
 
-A Python system that monitors a folder for new files and automatically displays them on a Waveshare 2.15" e-paper display. Supports images, text files, PDFs, and more with intelligent formatting for e-ink displays.
+A comprehensive e-ink display management system with both file monitoring and **web interface** for the Waveshare 2.15" e-paper display. Features a modern web UI for drag-and-drop uploads, file gallery with thumbnails, and complete remote management of your e-ink display.
 
 ## 🎯 Features
 
+### 🌐 **Web Management Interface**
+- **Modern responsive web UI** - Beautiful interface accessible from any device
+- **Drag & drop file uploads** - Simply drag files to upload and display
+- **Visual file gallery** - Grid view with thumbnails for all uploaded files
+- **Click to display** - Select any file from history to show on e-ink display
+- **Bulk file management** - Multi-select and delete files with confirmation
+- **Real-time status** - Live connection status and upload progress
+- **Mobile-friendly** - Works perfectly on phones, tablets, and desktop
+- **File previews** - Automatic thumbnail generation for images
+
+### 📟 **Core Display System**
 - **Real-time file monitoring** - Watches `~/watched_files` folder (or custom folder) for new files
 - **Persistent file storage** - Files remain on Pi until explicitly cleaned up (latest file always displayed)
 - **TouchDesigner integration** - HTTP upload server for remote file management
@@ -12,6 +23,7 @@ A Python system that monitors a folder for new files and automatically displays 
 - **Flexible screen control** - Choose when to clear screen (startup, exit, both, or never)
 - **Auto-startup service** - Run automatically on system boot with systemd
 - **Simple clear script** - Quick command to clear the display
+- **IP address display** - Shows device IP on startup for easy remote access
 - **Multi-format support**:
   - **Images** (jpg, png, bmp, gif): Auto-resized and centered
   - **Text files** (txt, md, py, js, html, css): Full content with word wrapping
@@ -322,6 +334,7 @@ The system includes a complete TouchDesigner integration for remote file uploads
 
 ### Upload Server Endpoints
 
+#### **Original API Endpoints (TouchDesigner Compatible)**
 | Endpoint | Method | Purpose | Data Format |
 |----------|---------|---------|-------------|
 | `/upload` | POST | Upload files | multipart/form-data |
@@ -331,6 +344,17 @@ The system includes a complete TouchDesigner integration for remote file uploads
 | `/latest_file` | GET | Get info about most recent file | No data |
 | `/cleanup_old_files` | POST | Remove old files, keep recent N files | JSON: `{"keep_count": 10}` |
 | `/clear_screen` | POST | Clear the e-ink display | No data |
+
+#### **New Web Interface Endpoints**
+| Endpoint | Method | Purpose | Data Format |
+|----------|---------|---------|-------------|
+| `/` | GET | Web interface homepage | HTML page |
+| `/api/files` | GET | Enhanced file listing with thumbnails | JSON with thumbnail URLs |
+| `/display_file` | POST | Display specific file on e-ink | JSON: `{"filename": "file.jpg"}` |
+| `/delete_file` | POST | Delete specific file | JSON: `{"filename": "file.jpg"}` |
+| `/delete_multiple` | POST | Delete multiple files | JSON: `{"filenames": ["file1.jpg", "file2.txt"]}` |
+| `/thumbnails/<filename>` | GET | Serve thumbnail images | Image file |
+| `/files/<filename>` | GET | Serve original files | File download |
 
 ### File Management Behavior
 
@@ -400,6 +424,242 @@ python upload_server.py
 - Use `/list_files` endpoint to monitor storage usage
 - Set up automatic cleanup with `/cleanup_old_files` to maintain system performance
 - Monitor disk space: `df -h ~/watched_files`
+
+## 🌐 Web Management Interface
+
+The system now includes a comprehensive web interface for managing your e-ink display remotely. This provides an intuitive way to upload files, browse your file gallery, and control the display from any device on your network.
+
+### 🚀 Quick Start
+
+1. **Start the web server:**
+   ```bash
+   # Use the combined system that runs both file monitoring and web server
+   ./eink_control.sh
+   ```
+
+2. **Find your Pi's IP address:**
+   ```bash
+   # IP address is displayed on the e-ink screen on startup
+   # Or check manually:
+   hostname -I
+   ```
+
+3. **Access the web interface:**
+   - **Default:** `http://YOUR_PI_IP:5000`
+   - **Example:** `http://192.168.1.100:5000`
+   - **Optional:** Set up nginx for cleaner URLs (see [Nginx Setup](#nginx-reverse-proxy-setup-optional))
+
+### ✨ Web Interface Features
+
+#### **📤 File Upload**
+- **Drag & Drop**: Simply drag files from your computer to the upload area
+- **Click to Browse**: Traditional file picker with multi-select support
+- **Real-time Progress**: Upload progress bar with file-by-file status
+- **Auto Display**: Uploaded files automatically appear on the e-ink display
+- **Supported Formats**: Images (jpg, png, bmp, gif), text files, PDFs, and more
+
+#### **🖼️ File Gallery**
+- **Visual Grid**: Thumbnail previews for images, icons for other file types
+- **File Information**: Name, size, and modification date for each file
+- **Newest First**: Files sorted by upload time (most recent first)
+- **Click to Display**: Click any file to instantly show it on the e-ink display
+- **Smart Thumbnails**: Automatic generation and caching of image previews
+
+#### **🔧 File Management**
+- **Individual Actions**: Display or delete files with confirmation dialogs
+- **Bulk Operations**: Select multiple files for batch deletion
+- **Selection Mode**: Toggle multi-select mode for bulk operations
+- **Smart Cleanup**: Automatic cleanup options to manage storage
+
+#### **⚡ System Controls**
+- **Clear Display**: Clear the e-ink screen without deleting files
+- **Clean Folder**: Remove all files from the watched folder (with confirmation)
+- **Refresh Files**: Reload the file gallery to see updates
+- **Connection Status**: Live status indicator showing server connectivity
+
+#### **📱 Responsive Design**
+- **Mobile Optimized**: Works perfectly on phones and tablets
+- **Touch Friendly**: Large buttons and easy touch navigation
+- **Desktop Enhanced**: Full feature set on desktop browsers
+- **Real-time Updates**: Live status indicators and notifications
+
+### 🎨 User Interface Overview
+
+The web interface consists of several main sections:
+
+#### **Header**
+- **E-ink Display Manager** title with status indicator
+- **Connection Status**: Green (connected), yellow (connecting), red (error)
+- **Live Status Updates**: Connection status checked every 30 seconds
+
+#### **Upload Section**  
+- **Large Drop Zone**: Drag files here or click to browse
+- **Progress Indicator**: Upload progress with file count and status
+- **File Type Support**: Visual indication of supported formats
+
+#### **Control Panel**
+- **Clear Display**: Blue button to clear the e-ink screen
+- **Clean Folder**: Red button to delete all files (with confirmation)
+- **Refresh Files**: Reload the file gallery
+- **Selection Mode**: Toggle for bulk file operations
+
+#### **File Gallery**
+- **Grid Layout**: Visual cards showing file previews
+- **File Cards**: Each card shows thumbnail/icon, name, size, date
+- **Action Buttons**: "Display" and "Delete" buttons on each file
+- **Empty State**: Helpful message when no files are present
+
+#### **Bulk Operations**
+- **Selection Controls**: Appear when files are selected
+- **Multi-select**: Checkboxes appear in selection mode
+- **Batch Actions**: Delete selected files with confirmation
+
+### 🔗 API Endpoints
+
+The web interface uses these API endpoints (also available for external integration):
+
+| Endpoint | Method | Purpose | Parameters |
+|----------|---------|---------|------------|
+| `/` | GET | Web interface homepage | None |
+| `/api/files` | GET | Enhanced file listing with thumbnails | None |
+| `/display_file` | POST | Display specific file on e-ink | `{"filename": "file.jpg"}` |
+| `/delete_file` | POST | Delete specific file | `{"filename": "file.jpg"}` |
+| `/delete_multiple` | POST | Delete multiple files | `{"filenames": ["file1.jpg", "file2.txt"]}` |
+| `/thumbnails/<filename>` | GET | Serve thumbnail images | None |
+| `/files/<filename>` | GET | Serve original files | None |
+
+### 🛠️ Technical Details
+
+#### **File Structure**
+```
+RpiEinky/
+├── upload_server.py           # Enhanced Flask server with web UI
+├── templates/
+│   └── index.html            # Main web interface template
+├── static/
+│   ├── css/
+│   │   └── style.css         # Modern responsive styles  
+│   └── js/
+│       └── app.js            # Complete JavaScript functionality
+└── ~/watched_files/
+    └── .thumbnails/          # Auto-generated thumbnails (hidden folder)
+```
+
+#### **Thumbnail Generation**
+- **Automatic**: Thumbnails generated on upload for images
+- **Cached**: Thumbnails stored in `.thumbnails/` folder
+- **Smart Sizing**: Max 200x200px, maintains aspect ratio
+- **Format**: JPEG format for consistent browser compatibility
+- **Background**: White background for transparent PNGs
+
+#### **Storage Management**
+- **Persistent Files**: Uploaded files remain until manually deleted
+- **Thumbnail Cleanup**: Thumbnails automatically removed when files deleted
+- **Bulk Operations**: Multi-select for efficient file management
+- **Storage Monitoring**: File count and size information in interface
+
+### 🎯 Usage Examples
+
+#### **Upload and Display Workflow**
+1. Open web interface: `http://192.168.1.100:5000`
+2. Drag an image file to the upload area
+3. Watch upload progress and automatic display on e-ink
+4. File appears in gallery for future re-display
+
+#### **File Management Workflow**
+1. Browse file gallery to see all uploaded files
+2. Click "Display" on any file to show it on e-ink
+3. Use selection mode to select multiple old files
+4. Delete selected files to free up storage space
+
+#### **Mobile Usage**
+1. Access same URL from phone/tablet browser
+2. Touch-friendly interface with large buttons
+3. Drag & drop works on mobile browsers
+4. Full functionality available on all screen sizes
+
+### 🔧 Web Interface Configuration
+
+#### **Access Method Options**
+- **Default (Port-based):** `http://PI_IP:5000` - Use `./eink_control.sh`
+- **Nginx (Path-based):** `http://PI_IP/eink/` - Use `./eink_control_nginx.sh` (see [Nginx Setup](#nginx-reverse-proxy-setup-optional))
+
+#### **Change Web Server Port**
+Edit `upload_server.py`:
+```python
+app.run(host='0.0.0.0', port=5000, debug=False)  # Change port here
+```
+
+#### **Customize Upload Limits**
+Edit `upload_server.py`:
+```python
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB limit
+```
+
+#### **Enable Debug Mode**
+For development only:
+```python
+app.run(host='0.0.0.0', port=5000, debug=True)  # Enable debug mode
+```
+
+### 🐛 Web Interface Troubleshooting
+
+#### **Cannot Access Web Interface**
+```bash
+# Check if server is running
+curl http://localhost:5000/status
+
+# Check Pi's IP address
+hostname -I
+
+# Test from Pi browser
+curl http://127.0.0.1:5000
+
+# Check firewall (usually not needed on local network)
+sudo ufw status
+```
+
+#### **Uploads Fail**
+```bash
+# Check file permissions on watched folder
+ls -la ~/watched_files/
+chmod 755 ~/watched_files/
+
+# Check disk space
+df -h ~/watched_files/
+
+# Check server logs
+./eink_control.sh status  # Check service status
+```
+
+#### **Thumbnails Not Showing**
+```bash
+# Check thumbnail folder exists and is writable
+ls -la ~/watched_files/.thumbnails/
+chmod 755 ~/watched_files/.thumbnails/
+
+# Check PIL/Pillow installation
+source eink_env/bin/activate
+python -c "from PIL import Image; print('PIL OK')"
+
+# Manually test thumbnail generation
+python -c "
+from upload_server import generate_thumbnail
+result = generate_thumbnail('/path/to/image.jpg', 'image.jpg')
+print(f'Thumbnail: {result}')
+"
+```
+
+#### **Web Interface Slow**
+```bash
+# Check system resources
+top
+free -h
+
+# Reduce thumbnail quality in upload_server.py
+# Change: img.save(thumb_path, 'JPEG', quality=85)
+# To: img.save(thumb_path, 'JPEG', quality=70)
+```
 
 ## 🔧 Configuration
 
@@ -473,18 +733,30 @@ self.font_large = ImageFont.truetype(font_path, 20)
 
 ```
 RpiEinky/
-├── display_latest.py              # Main monitoring system
-├── upload_server.py               # HTTP upload server for TouchDesigner
+├── display_latest.py              # Main monitoring system with IP display
+├── upload_server.py               # Enhanced Flask server with web UI
 ├── run_eink_system.py             # Combined runner for both services
 ├── clear_display.py               # Simple script to clear the display
+├── show_ip.py                     # Standalone IP address display script
+├── eink_control.sh                # Smart control script (auto-restart)
+├── eink_control_nginx.sh          # Nginx-compatible control script
+├── activate_env.sh                # Foolproof venv activation script
+├── setup_nginx.sh                 # Nginx reverse proxy setup script (optional)
 ├── eink-display.service           # Systemd service file for auto-start
 ├── setup_startup.sh               # Automated setup script for auto-start
 ├── test_display_system.py         # Test file generator
 ├── test_upload_server.py          # Upload server test script
-├── touchdesigner_eink_script.py   # TouchDesigner project builder
+├── templates/                     # Web interface templates
+│   └── index.html                # Main web interface
+├── static/                        # Web interface static files
+│   ├── css/
+│   │   └── style.css             # Modern responsive styles
+│   └── js/
+│       └── app.js                # Complete JavaScript functionality
 ├── requirements.txt               # Python dependencies
-├── README.md                      # This file
-└── ~/watched_files/               # Monitored folder (in home directory, created automatically)
+├── README.md                      # This documentation
+└── ~/watched_files/               # Monitored folder (in home directory)
+    └── .thumbnails/              # Auto-generated thumbnails (hidden)
 ```
 
 ## 🐛 Troubleshooting
@@ -734,13 +1006,13 @@ sudo journalctl -u eink-display.service -f
 
 ### Python Packages (installed via pip)
 - `watchdog==3.0.0` - File system monitoring
-- `Pillow==10.0.0` - Image processing
+- `Pillow==10.0.0` - Image processing and thumbnail generation
 - `pdf2image==1.16.3` - PDF rendering (optional)
 - `spidev==3.5` - SPI communication for e-ink display
 - `gpiozero==1.6.2` - GPIO control for Raspberry Pi
 - `RPi.GPIO==0.7.1` - GPIO library for Raspberry Pi
 - `lgpio==0.2.2.0` - Modern GPIO library for Raspberry Pi
-- `Flask==2.3.3` - Web server for TouchDesigner integration
+- `Flask==2.3.3` - Web server for web interface and TouchDesigner integration
 - `requests==2.31.0` - HTTP client for testing and advanced features
 
 ### System Packages (installed via apt)
@@ -759,6 +1031,14 @@ sudo journalctl -u eink-display.service -f
 ### Common Usage Patterns
 
 ```bash
+# Start the complete system with web interface (RECOMMENDED)
+./eink_control.sh                    # Default: access at :5000
+./eink_control_nginx.sh              # Optional: nginx setup for /eink/ path
+
+# Show device IP address on e-ink display  
+python display_latest.py --show-ip
+python show_ip.py
+
 # Basic monitoring with default settings
 python display_latest.py
 
@@ -776,6 +1056,31 @@ python display_latest.py -f ~/display_queue -d ~/status.txt --clear-start --no-c
 
 # Just clear the display
 python clear_display.py
+```
+
+### Web Interface Examples
+
+```bash
+# Default access (port-based)
+http://192.168.1.100:5000
+
+# Optional nginx access (cleaner URLs)
+http://192.168.1.100/eink/
+
+# Pi services homepage (with nginx setup)
+http://192.168.1.100/
+
+# Upload file via web interface (drag & drop or click to browse)
+# Files automatically display on e-ink and appear in gallery
+
+# Display any previous file via web interface
+# Click "Display" button on any file in the gallery
+
+# Delete old files via web interface  
+# Use selection mode to select multiple files, then delete
+
+# System management via web interface
+# Use "Clear Display" and "Clean Folder" buttons
 ```
 
 ### Adding Different File Types
