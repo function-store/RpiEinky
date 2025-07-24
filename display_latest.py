@@ -115,6 +115,12 @@ class EinkDisplayHandler(FileSystemEventHandler):
         # Set to True to rotate display 180 degrees (upside-down)
         self.display_upside_down = True
         
+        # Configure image processing mode
+        self.image_crop_mode = 'center_crop'  # 'center_crop' or 'fit_with_letterbox'
+        
+        # Load settings
+        self.load_settings()
+        
         # Load fonts (fallback to default if Font.ttc not available)
         try:
             self.font_small = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 12)
@@ -127,6 +133,34 @@ class EinkDisplayHandler(FileSystemEventHandler):
         
         logger.info(f"Monitoring folder: {self.watched_folder.absolute()}")
         logger.info(f"E-ink display initialized - Size: {self.epd.width}x{self.epd.height}")
+        logger.info(f"Auto-display uploads: {self.auto_display_uploads}")
+    
+    def load_settings(self):
+        """Load settings from the settings file"""
+        try:
+            settings_file = self.watched_folder / '.settings.json'
+            if settings_file.exists():
+                import json
+                with open(settings_file, 'r') as f:
+                    settings = json.load(f)
+                    self.auto_display_uploads = settings.get('auto_display_upload', True)
+                    self.image_crop_mode = settings.get('image_crop_mode', 'center_crop')
+                    logger.info(f"Settings loaded - Auto-display: {self.auto_display_uploads}, Crop mode: {self.image_crop_mode}")
+            else:
+                # Default settings
+                self.auto_display_uploads = True
+                self.image_crop_mode = 'center_crop'
+                logger.info("Using default settings - Auto-display: True, Crop mode: center_crop")
+        except Exception as e:
+            logger.error(f"Error loading settings: {e}")
+            # Fallback to defaults
+            self.auto_display_uploads = True
+            self.image_crop_mode = 'center_crop'
+    
+    def reload_settings(self):
+        """Reload settings from file (useful when settings change)"""
+        self.load_settings()
+        logger.info(f"Settings reloaded - Auto-display: {self.auto_display_uploads}, Crop mode: {self.image_crop_mode}")
     
     def validate_file(self, file_path):
         """Validate that file is complete and readable"""
@@ -206,11 +240,16 @@ class EinkDisplayHandler(FileSystemEventHandler):
             logger.error(f"File validation failed: {file_path.name}")
             return
         
-        try:
-            self.display_file(file_path)
-        except Exception as e:
-            logger.error(f"Error displaying file {file_path.name}: {e}")
-            self.display_error(file_path.name, str(e))
+        # Check if auto-display is enabled
+        if self.auto_display_uploads:
+            try:
+                self.display_file(file_path)
+                logger.info(f"Auto-displayed file: {file_path.name}")
+            except Exception as e:
+                logger.error(f"Error auto-displaying file {file_path.name}: {e}")
+                self.display_error(file_path.name, str(e))
+        else:
+            logger.info(f"Auto-display disabled - file {file_path.name} not displayed")
     
     def display_file(self, file_path):
         """Convert and display file on e-ink display"""
@@ -230,6 +269,7 @@ class EinkDisplayHandler(FileSystemEventHandler):
         try:
             # Open and process image
             image = Image.open(file_path)
+            original_size = image.size
             
             # Convert to RGB if necessary, using white background for transparency
             if image.mode != 'RGB':
@@ -241,19 +281,21 @@ class EinkDisplayHandler(FileSystemEventHandler):
                 else:
                     image = image.convert('RGB')
             
-            # Resize to fit display while maintaining aspect ratio
-            image = self.resize_image_to_fit(image)
+            # Resize and crop to fit display
+            processed_image = self.resize_image_to_fit(image)
             
-            # Create display image
-            display_image = Image.new('RGB', (self.epd.height, self.epd.width), self.epd.WHITE)
-            
-            # Center the image
-            x_offset = (self.epd.height - image.width) // 2
-            y_offset = (self.epd.width - image.height) // 2
-            display_image.paste(image, (x_offset, y_offset))
+            # If the processed image is exactly display size, use it directly
+            if processed_image.size == (self.epd.height, self.epd.width):
+                display_image = processed_image
+            else:
+                # Create display image and center the processed image
+                display_image = Image.new('RGB', (self.epd.height, self.epd.width), self.epd.WHITE)
+                x_offset = (self.epd.height - processed_image.width) // 2
+                y_offset = (self.epd.width - processed_image.height) // 2
+                display_image.paste(processed_image, (x_offset, y_offset))
             
             self.display_buffer(display_image)
-            logger.info(f"Displayed image: {file_path.name}")
+            logger.info(f"Displayed image: {file_path.name} (original: {original_size}, final: {display_image.size})")
             
         except Exception as e:
             logger.error(f"Error displaying image {file_path.name}: {e}")
@@ -501,19 +543,61 @@ class EinkDisplayHandler(FileSystemEventHandler):
             self.display_error("IP Display", str(e))
     
     def resize_image_to_fit(self, image):
-        """Resize image to fit display while maintaining aspect ratio"""
+        """Resize image to fit display while maintaining aspect ratio, with configurable crop mode"""
         display_width = self.epd.width
         display_height = self.epd.height
         
-        # Calculate scaling factor
-        scale_x = display_height / image.width
-        scale_y = display_width / image.height
-        scale = min(scale_x, scale_y)
+        # If image is smaller than display in both dimensions, scale up to fit
+        if image.width <= display_height and image.height <= display_width:
+            # Calculate scaling factor to fit within display
+            scale_x = display_height / image.width
+            scale_y = display_width / image.height
+            scale = min(scale_x, scale_y)
+            
+            new_width = int(image.width * scale)
+            new_height = int(image.height * scale)
+            
+            return image.resize((new_width, new_height), Image.Resampling.LANCZOS)
         
-        new_width = int(image.width * scale)
-        new_height = int(image.height * scale)
-        
-        return image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+        # If image is larger than display in any dimension, handle based on crop mode
+        else:
+            # Use the loaded crop mode setting
+            crop_mode = getattr(self, 'image_crop_mode', 'center_crop')
+            if crop_mode == 'center_crop':
+                # Center-crop mode: scale to cover display, then crop
+                scale_x = display_height / image.width
+                scale_y = display_width / image.height
+                scale = max(scale_x, scale_y)  # Use max to ensure image covers display
+                
+                # Resize image to cover display
+                new_width = int(image.width * scale)
+                new_height = int(image.height * scale)
+                resized_image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                
+                # Center-crop to exact display size
+                left = (new_width - display_height) // 2
+                top = (new_height - display_width) // 2
+                right = left + display_height
+                bottom = top + display_width
+                
+                cropped_image = resized_image.crop((left, top, right, bottom))
+                
+                logger.info(f"Center-cropped image from {image.size} to {cropped_image.size}")
+                return cropped_image
+                
+            else:  # fit_with_letterbox
+                # Letterbox mode: scale to fit within display, add letterboxing
+                scale_x = display_height / image.width
+                scale_y = display_width / image.height
+                scale = min(scale_x, scale_y)  # Use min to fit within display
+                
+                new_width = int(image.width * scale)
+                new_height = int(image.height * scale)
+                
+                resized_image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                
+                logger.info(f"Letterboxed image from {image.size} to {resized_image.size}")
+                return resized_image
     
     def cleanup(self, force_clear=None):
         """Clean up resources"""

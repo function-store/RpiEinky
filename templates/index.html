@@ -53,6 +53,10 @@
                     <i class="fas fa-sync-alt"></i>
                     Refresh Files
                 </button>
+                <button class="control-btn" id="open-settings">
+                    <i class="fas fa-cog"></i>
+                    Settings
+                </button>
                 <button class="control-btn select-btn" id="select-multiple" style="display: none;">
                     <i class="fas fa-check-square"></i>
                     Select Multiple
@@ -113,6 +117,49 @@
             <div class="modal-footer">
                 <button class="btn secondary" id="modal-cancel">Cancel</button>
                 <button class="btn primary" id="modal-confirm">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div class="modal-overlay" id="settings-modal" style="display: none;">
+        <div class="modal">
+            <div class="modal-header">
+                <h3><i class="fas fa-cog"></i> Display Settings</h3>
+            </div>
+            <div class="modal-body">
+                <div class="setting-group">
+                    <label for="image-crop-mode">Image Processing Mode:</label>
+                    <select id="image-crop-mode" class="setting-input">
+                        <option value="center_crop">Center Crop (Fill Display)</option>
+                        <option value="fit_with_letterbox">Fit with Letterbox (Show All)</option>
+                    </select>
+                    <p class="setting-description">
+                        <strong>Center Crop:</strong> Large images are cropped to fill the entire display<br>
+                        <strong>Fit with Letterbox:</strong> Images are scaled to fit with black bars if needed
+                    </p>
+                </div>
+                
+                <div class="setting-group">
+                    <label for="auto-display-upload">Auto-Display Uploads:</label>
+                    <input type="checkbox" id="auto-display-upload" class="setting-input">
+                    <p class="setting-description">
+                        Automatically display files when they are uploaded
+                    </p>
+                </div>
+                
+                <div class="setting-group">
+                    <label for="thumbnail-quality">Thumbnail Quality:</label>
+                    <input type="range" id="thumbnail-quality" class="setting-input" min="50" max="95" step="5">
+                    <span id="thumbnail-quality-value">85</span>
+                    <p class="setting-description">
+                        JPEG quality for image thumbnails (higher = better quality, larger files)
+                    </p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary" id="settings-cancel">Cancel</button>
+                <button class="btn primary" id="settings-save">Save Settings</button>
             </div>
         </div>
     </div>

@@ -44,6 +44,19 @@ class EinkDisplayManager {
         document.getElementById('modal-overlay').addEventListener('click', (e) => {
             if (e.target.id === 'modal-overlay') this.hideModal();
         });
+        
+        // Settings events
+        document.getElementById('open-settings').addEventListener('click', this.openSettings.bind(this));
+        document.getElementById('settings-cancel').addEventListener('click', this.closeSettings.bind(this));
+        document.getElementById('settings-save').addEventListener('click', this.saveSettings.bind(this));
+        document.getElementById('settings-modal').addEventListener('click', (e) => {
+            if (e.target.id === 'settings-modal') this.closeSettings();
+        });
+        
+        // Settings input events
+        document.getElementById('thumbnail-quality').addEventListener('input', (e) => {
+            document.getElementById('thumbnail-quality-value').textContent = e.target.value;
+        });
     }
     
     // ============ DRAG & DROP HANDLING ============
@@ -507,6 +520,76 @@ class EinkDisplayManager {
             this.modalConfirmCallback();
         }
         this.hideModal();
+    }
+    
+    // ============ SETTINGS MANAGEMENT ============
+    
+    async openSettings() {
+        try {
+            // Load current settings
+            const response = await fetch('/settings');
+            if (response.ok) {
+                const settings = await response.json();
+                this.populateSettingsForm(settings);
+            } else {
+                throw new Error('Failed to load settings');
+            }
+            
+            // Show settings modal
+            document.getElementById('settings-modal').style.display = 'flex';
+            
+        } catch (error) {
+            console.error('Error opening settings:', error);
+            this.showToast('Failed to load settings', 'error');
+        }
+    }
+    
+    closeSettings() {
+        document.getElementById('settings-modal').style.display = 'none';
+    }
+    
+    populateSettingsForm(settings) {
+        // Set image crop mode
+        document.getElementById('image-crop-mode').value = settings.image_crop_mode || 'center_crop';
+        
+        // Set auto display upload
+        document.getElementById('auto-display-upload').checked = settings.auto_display_upload !== false;
+        
+        // Set thumbnail quality
+        const qualitySlider = document.getElementById('thumbnail-quality');
+        const qualityValue = document.getElementById('thumbnail-quality-value');
+        qualitySlider.value = settings.thumbnail_quality || 85;
+        qualityValue.textContent = qualitySlider.value;
+    }
+    
+    async saveSettings() {
+        try {
+            const settings = {
+                image_crop_mode: document.getElementById('image-crop-mode').value,
+                auto_display_upload: document.getElementById('auto-display-upload').checked,
+                thumbnail_quality: parseInt(document.getElementById('thumbnail-quality').value)
+            };
+            
+            const response = await fetch('/settings', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(settings)
+            });
+            
+            if (response.ok) {
+                this.showToast('Settings saved successfully', 'success');
+                this.closeSettings();
+            } else {
+                const error = await response.json();
+                throw new Error(error.error || 'Failed to save settings');
+            }
+            
+        } catch (error) {
+            console.error('Error saving settings:', error);
+            this.showToast(`Failed to save settings: ${error.message}`, 'error');
+        }
     }
 }
 

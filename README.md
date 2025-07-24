@@ -5,7 +5,7 @@ A comprehensive e-ink display management system with both file monitoring and **
 ## 🎯 Features
 
 ### 🌐 **Web Management Interface**
-- **Modern responsive web UI** - Beautiful interface accessible from any device
+- **Modern responsive web UI** - Beautiful dark mode interface accessible from any device
 - **Drag & drop file uploads** - Simply drag files to upload and display
 - **Visual file gallery** - Grid view with thumbnails for all uploaded files
 - **Click to display** - Select any file from history to show on e-ink display
@@ -13,6 +13,8 @@ A comprehensive e-ink display management system with both file monitoring and **
 - **Real-time status** - Live connection status and upload progress
 - **Mobile-friendly** - Works perfectly on phones, tablets, and desktop
 - **File previews** - Automatic thumbnail generation for images
+- **Configurable settings** - Control image processing, auto-display, and thumbnail quality
+- **Smart image processing** - Center-crop or letterbox modes for perfect display fit
 
 ### 📟 **Core Display System**
 - **Real-time file monitoring** - Watches `~/watched_files` folder (or custom folder) for new files
@@ -24,8 +26,10 @@ A comprehensive e-ink display management system with both file monitoring and **
 - **Auto-startup service** - Run automatically on system boot with systemd
 - **Simple clear script** - Quick command to clear the display
 - **IP address display** - Shows device IP on startup for easy remote access
+- **Smart image processing** - Configurable center-crop or letterbox modes
+- **Auto-display control** - Choose whether uploaded files display automatically
 - **Multi-format support**:
-  - **Images** (jpg, png, bmp, gif): Auto-resized and centered
+  - **Images** (jpg, png, bmp, gif): Auto-resized with configurable crop modes
   - **Text files** (txt, md, py, js, html, css): Full content with word wrapping
   - **PDFs**: First page converted to image (requires pdf2image)
   - **Other files**: File information display (name, size, type, date)
@@ -34,6 +38,26 @@ A comprehensive e-ink display management system with both file monitoring and **
 - **Robust error handling** - Visual error messages on display
 - **Clean shutdown** - Properly cleans display on exit (configurable)
 - **File management API** - List files, get latest file info, cleanup old files
+
+## ⚙️ Settings & Configuration
+
+### 🎛️ **Web Interface Settings**
+Access settings via the **Settings** button in the web interface:
+
+#### **🖼️ Image Processing Mode**
+- **Center Crop (Default):** Large images are cropped to fill the entire display
+- **Fit with Letterbox:** Images are scaled to fit with black bars if needed
+
+#### **🔄 Auto-Display Uploads**
+- **Enabled (Default):** Files automatically display when uploaded
+- **Disabled:** Files are saved but not displayed (manual display only)
+
+#### **🖼️ Thumbnail Quality**
+- **Range:** 50-95 (JPEG quality)
+- **Default:** 85 (good balance of quality/size)
+
+### 📁 **Settings Storage**
+Settings are saved to `~/watched_files/.settings.json` and persist across restarts.
 
 ## 🛠️ Hardware Requirements
 
@@ -473,8 +497,15 @@ The system now includes a comprehensive web interface for managing your e-ink di
 
 #### **⚡ System Controls**
 - **Clear Display**: Clear the e-ink screen without deleting files
+- **Settings Panel**: Configure image processing, auto-display, and thumbnail quality
 - **Clean Folder**: Remove all files from the watched folder (with confirmation)
 - **Refresh Files**: Reload the file gallery to see updates
+
+#### **⚙️ Settings Configuration**
+- **Image Processing Mode**: Choose between center-crop (fill display) or letterbox (show all)
+- **Auto-Display Uploads**: Enable/disable automatic display of uploaded files
+- **Thumbnail Quality**: Adjust JPEG quality for image previews (50-95)
+- **Persistent Settings**: All settings are saved and persist across restarts
 - **Connection Status**: Live status indicator showing server connectivity
 
 #### **📱 Responsive Design**
@@ -590,6 +621,17 @@ Edit `upload_server.py`:
 app.run(host='0.0.0.0', port=5000, debug=False)  # Change port here
 ```
 
+#### **Configure Default Settings**
+Edit the `DEFAULT_SETTINGS` in `upload_server.py`:
+```python
+DEFAULT_SETTINGS = {
+    'image_crop_mode': 'center_crop',  # 'center_crop' or 'fit_with_letterbox'
+    'auto_display_upload': True,       # Automatically display uploaded files
+    'thumbnail_quality': 85,           # JPEG quality for thumbnails
+    'max_file_size_mb': 16            # Maximum file size in MB
+}
+```
+
 #### **Customize Upload Limits**
 Edit `upload_server.py`:
 ```python
@@ -659,6 +701,35 @@ free -h
 # Reduce thumbnail quality in upload_server.py
 # Change: img.save(thumb_path, 'JPEG', quality=85)
 # To: img.save(thumb_path, 'JPEG', quality=70)
+```
+
+### 🐛 Settings & Auto-Display Troubleshooting
+
+**Auto-display not working:**
+```bash
+# Check if auto-display is enabled in settings
+cat ~/watched_files/.settings.json
+
+# Check display monitor logs for auto-display messages
+# Look for: "Auto-displayed file:" or "Auto-display disabled"
+```
+
+**Settings not saving:**
+```bash
+# Check settings file permissions
+ls -la ~/watched_files/.settings.json
+
+# Check if settings file exists
+cat ~/watched_files/.settings.json
+```
+
+**Image processing issues:**
+```bash
+# Verify crop mode setting
+grep "image_crop_mode" ~/watched_files/.settings.json
+
+# Check display logs for crop mode messages
+# Look for: "Center-cropped image" or "Letterboxed image"
 ```
 
 ## 🔧 Configuration
@@ -744,6 +815,7 @@ RpiEinky/
 ├── setup_nginx.sh                 # Nginx reverse proxy setup script (optional)
 ├── eink-display.service           # Systemd service file for auto-start
 ├── setup_startup.sh               # Automated setup script for auto-start
+├── .settings.json                 # Web interface settings (auto-generated)
 ├── test_display_system.py         # Test file generator
 ├── test_upload_server.py          # Upload server test script
 ├── templates/                     # Web interface templates
@@ -1075,6 +1147,9 @@ http://192.168.1.100/
 
 # Display any previous file via web interface
 # Click "Display" button on any file in the gallery
+
+# Configure settings via web interface
+# Click "Settings" button to adjust image processing and auto-display
 
 # Delete old files via web interface  
 # Use selection mode to select multiple files, then delete

@@ -550,6 +550,52 @@ body {
     transform: translateY(-1px);
 }
 
+/* Settings Styles */
+.setting-group {
+    margin-bottom: 24px;
+}
+
+.setting-group label {
+    display: block;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+}
+
+.setting-input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--card-bg);
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    margin-bottom: 8px;
+}
+
+.setting-input[type="checkbox"] {
+    width: auto;
+    margin-right: 8px;
+}
+
+.setting-input[type="range"] {
+    width: calc(100% - 50px);
+    display: inline-block;
+    margin-right: 10px;
+}
+
+.setting-description {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+    margin-top: 4px;
+}
+
+#thumbnail-quality-value {
+    font-weight: 600;
+    color: var(--primary-color);
+}
+
 /* Responsive Design */
 @media (max-width: 768px) {
     .container {

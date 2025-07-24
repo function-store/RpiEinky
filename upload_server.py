@@ -25,11 +25,21 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 # Configuration
 UPLOAD_FOLDER = os.path.expanduser('~/watched_files')
 THUMBNAILS_FOLDER = os.path.join(UPLOAD_FOLDER, '.thumbnails')
+SETTINGS_FILE = os.path.join(UPLOAD_FOLDER, '.settings.json')
+
 ALLOWED_EXTENSIONS = {
     'txt', 'md', 'py', 'js', 'html', 'css',  # Text files
     'jpg', 'jpeg', 'png', 'bmp', 'gif',      # Images
     'pdf',                                    # PDFs
     'json', 'xml', 'csv'                     # Data files
+}
+
+# Default settings
+DEFAULT_SETTINGS = {
+    'image_crop_mode': 'center_crop',  # 'center_crop' or 'fit_with_letterbox'
+    'auto_display_upload': True,       # Automatically display uploaded files
+    'thumbnail_quality': 85,           # JPEG quality for thumbnails
+    'max_file_size_mb': 16            # Maximum file size in MB
 }
 
 # Image extensions for thumbnail generation
@@ -44,6 +54,38 @@ def ensure_upload_folder():
     """Create upload folder and thumbnails folder if they don't exist"""
     Path(UPLOAD_FOLDER).mkdir(parents=True, exist_ok=True)
     Path(THUMBNAILS_FOLDER).mkdir(parents=True, exist_ok=True)
+
+def load_settings():
+    """Load settings from file or return defaults"""
+    try:
+        if os.path.exists(SETTINGS_FILE):
+            with open(SETTINGS_FILE, 'r') as f:
+                saved_settings = json.load(f)
+                # Merge with defaults to ensure all settings exist
+                settings = DEFAULT_SETTINGS.copy()
+                settings.update(saved_settings)
+                return settings
+        else:
+            return DEFAULT_SETTINGS.copy()
+    except Exception as e:
+        logger.error(f"Error loading settings: {e}")
+        return DEFAULT_SETTINGS.copy()
+
+def save_settings(settings):
+    """Save settings to file"""
+    try:
+        with open(SETTINGS_FILE, 'w') as f:
+            json.dump(settings, f, indent=2)
+        logger.info("Settings saved successfully")
+        return True
+    except Exception as e:
+        logger.error(f"Error saving settings: {e}")
+        return False
+
+def get_setting(key, default=None):
+    """Get a specific setting value"""
+    settings = load_settings()
+    return settings.get(key, default)
 
 def get_file_type(filename):
     """Determine file type category"""
@@ -111,8 +153,12 @@ def display_file_on_eink(filename):
         
         from display_latest import EinkDisplayHandler
         
+        # Get current settings
+        crop_mode = get_setting('image_crop_mode', 'center_crop')
+        
         # Create handler and display file
         handler = EinkDisplayHandler(clear_on_start=False, clear_on_exit=False)
+        handler.reload_settings()  # Reload settings to get latest values
         file_path = PathlibPath(UPLOAD_FOLDER) / filename
         
         if not file_path.exists():
@@ -121,7 +167,7 @@ def display_file_on_eink(filename):
         handler.display_file(file_path)
         handler.cleanup(force_clear=False)  # Don't clear display after showing
         
-        logger.info(f"Displayed file on e-ink: {filename}")
+        logger.info(f"Displayed file on e-ink: {filename} (crop mode: {crop_mode})")
         return True
         
     except Exception as e:
@@ -256,6 +302,47 @@ def status():
         'upload_folder': UPLOAD_FOLDER,
         'allowed_extensions': list(ALLOWED_EXTENSIONS)
     })
+
+@app.route('/settings', methods=['GET'])
+def get_settings():
+    """Get current settings"""
+    try:
+        settings = load_settings()
+        return jsonify(settings), 200
+    except Exception as e:
+        logger.error(f"Error getting settings: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/settings', methods=['POST'])
+def update_settings():
+    """Update settings"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No settings data provided'}), 400
+        
+        current_settings = load_settings()
+        
+        # Validate and update settings
+        for key, value in data.items():
+            if key in DEFAULT_SETTINGS:
+                current_settings[key] = value
+            else:
+                logger.warning(f"Unknown setting key: {key}")
+        
+        # Save updated settings
+        if save_settings(current_settings):
+            logger.info(f"Settings updated: {list(data.keys())}")
+            return jsonify({
+                'message': 'Settings updated successfully',
+                'settings': current_settings
+            }), 200
+        else:
+            return jsonify({'error': 'Failed to save settings'}), 500
+            
+    except Exception as e:
+        logger.error(f"Error updating settings: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/list_files', methods=['GET'])
 def list_files():
