@@ -584,6 +584,22 @@ body {
     margin-right: 10px;
 }
 
+.setting-input[type="number"] {
+    width: 100px;
+    padding: 8px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background-color: var(--card-bg);
+    color: var(--text-primary);
+    font-size: 14px;
+}
+
+.setting-input[type="number"]:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
 .setting-description {
     font-size: 0.75rem;
     color: var(--text-secondary);

@@ -8,6 +8,7 @@ import argparse
 import signal
 import socket
 import subprocess
+import threading
 from pathlib import Path
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
@@ -96,7 +97,7 @@ def signal_handler_clear_exit(signum, frame):
 
 
 class EinkDisplayHandler(FileSystemEventHandler):
-    def __init__(self, watched_folder="./watched_files", clear_on_start=False, clear_on_exit=True):
+    def __init__(self, watched_folder="./watched_files", clear_on_start=False, clear_on_exit=True, disable_timing=False, refresh_interval_hours=24, startup_delay_minutes=1):
         self.watched_folder = Path(watched_folder)
         self.watched_folder.mkdir(exist_ok=True)
         self.clear_on_start = clear_on_start
@@ -131,9 +132,131 @@ class EinkDisplayHandler(FileSystemEventHandler):
             self.font_medium = ImageFont.load_default()
             self.font_large = ImageFont.load_default()
         
+        # Timing control variables
+        self.startup_time = time.time()
+        self.last_file_update_time = time.time()
+        self.last_refresh_time = time.time()
+        self.current_displayed_file = None
+        
+        # Set initial timing values from constructor parameters
+        self.refresh_interval_hours = refresh_interval_hours
+        self.startup_delay_minutes = startup_delay_minutes
+        self.enable_timing_features = not disable_timing
+        
+        # Load settings (this will override timing values from settings file if available)
+        self.load_settings()
+        
+        # Start background threads for timing features (unless disabled)
+        self.startup_timer_thread = None
+        self.refresh_timer_thread = None
+        if self.enable_timing_features:
+            self.start_timing_threads()
+            logger.info(f"Timing features enabled: {self.startup_delay_minutes}-minute startup display, {self.refresh_interval_hours}-hour refresh")
+        else:
+            logger.info("Timing features disabled")
+        
         logger.info(f"Monitoring folder: {self.watched_folder.absolute()}")
         logger.info(f"E-ink display initialized - Size: {self.epd.width}x{self.epd.height}")
         logger.info(f"Auto-display uploads: {self.auto_display_uploads}")
+    
+    def start_timing_threads(self):
+        """Start background threads for timing-based features"""
+        # Start 1-minute startup timer thread
+        self.startup_timer_thread = threading.Thread(target=self.startup_timer_worker, daemon=True)
+        self.startup_timer_thread.start()
+        
+        # Start N-hour refresh timer thread
+        self.refresh_timer_thread = threading.Thread(target=self.refresh_timer_worker, daemon=True)
+        self.refresh_timer_thread.start()
+        
+        logger.info("Background timing threads started")
+    
+    def startup_timer_worker(self):
+        """Worker thread for configurable startup display delay"""
+        try:
+            # Wait for the configured startup delay
+            startup_delay_seconds = self.startup_delay_minutes * 60
+            time.sleep(startup_delay_seconds)
+            
+            # Check if we should display the latest file
+            if not exit_requested:
+                logger.info(f"{self.startup_delay_minutes}-minute startup timer triggered - checking for latest file")
+                self.display_latest_file_if_no_updates()
+                
+        except Exception as e:
+            logger.error(f"Startup timer worker error: {e}")
+    
+    def refresh_timer_worker(self):
+        """Worker thread for configurable refresh interval"""
+        try:
+            while not exit_requested:
+                # Wait for the configured refresh interval
+                refresh_interval_seconds = self.refresh_interval_hours * 3600
+                time.sleep(refresh_interval_seconds)
+                
+                if not exit_requested:
+                    logger.info(f"{self.refresh_interval_hours}-hour refresh timer triggered - refreshing display")
+                    self.perform_display_refresh()
+                    
+        except Exception as e:
+            logger.error(f"Refresh timer worker error: {e}")
+    
+    def display_latest_file_if_no_updates(self):
+        """Display the latest file if no updates have happened since startup"""
+        try:
+            # Check if any files have been updated since startup
+            latest_file = self.get_latest_file()
+            if latest_file:
+                file_mtime = latest_file.stat().st_mtime
+                if file_mtime < self.startup_time:
+                    # No new files since startup, display the latest file
+                    logger.info(f"No updates since startup - displaying latest file: {latest_file.name}")
+                    self.display_file(latest_file)
+                    self.current_displayed_file = latest_file
+                else:
+                    logger.info("Files have been updated since startup - skipping startup display")
+            else:
+                logger.info("No files found for startup display")
+                
+        except Exception as e:
+            logger.error(f"Error in startup display: {e}")
+    
+    def perform_display_refresh(self):
+        """Perform a configurable refresh by clearing and re-displaying current content"""
+        try:
+            logger.info(f"Performing {self.refresh_interval_hours}-hour display refresh...")
+            
+            # Clear the display
+            self.epd.Clear()
+            time.sleep(1)
+            
+            # Re-display the current file if we have one
+            if self.current_displayed_file and self.current_displayed_file.exists():
+                logger.info(f"Re-displaying current file after refresh: {self.current_displayed_file.name}")
+                self.display_file(self.current_displayed_file)
+            else:
+                # No current file, try to display the latest file
+                latest_file = self.get_latest_file()
+                if latest_file:
+                    logger.info(f"Displaying latest file after refresh: {latest_file.name}")
+                    self.display_file(latest_file)
+                    self.current_displayed_file = latest_file
+                else:
+                    # No files available, show welcome screen
+                    logger.info("No files available after refresh - showing welcome screen")
+                    self.display_welcome_screen()
+            
+            self.last_refresh_time = time.time()
+            logger.info(f"{self.refresh_interval_hours}-hour refresh completed successfully")
+            
+        except Exception as e:
+            logger.error(f"Error during display refresh: {e}")
+            # Try to reinitialize display if there was an error
+            try:
+                self.reinitialize_display()
+                logger.info("Display reinitialized after refresh error")
+            except Exception as reinit_error:
+                logger.error(f"Display reinitialization failed after refresh error: {reinit_error}")
     
     def load_settings(self):
         """Load settings from the settings file"""
@@ -146,17 +269,30 @@ class EinkDisplayHandler(FileSystemEventHandler):
                     settings = json.load(f)
                     self.auto_display_uploads = settings.get('auto_display_upload', True)
                     self.image_crop_mode = settings.get('image_crop_mode', 'center_crop')
+                    
+                    # Load timing settings
+                    self.startup_delay_minutes = settings.get('startup_delay_minutes', 1)
+                    self.refresh_interval_hours = settings.get('refresh_interval_hours', 24)
+                    self.enable_timing_features = settings.get('enable_timing_features', True)
+                    
                     logger.info(f"Settings loaded from {settings_file} - Auto-display: {self.auto_display_uploads}, Crop mode: {self.image_crop_mode}")
+                    logger.info(f"Timing settings - Enabled: {self.enable_timing_features}, Startup delay: {self.startup_delay_minutes}min, Refresh: {self.refresh_interval_hours}h")
             else:
                 # Default settings
                 self.auto_display_uploads = True
                 self.image_crop_mode = 'center_crop'
-                logger.info(f"Settings file not found at {settings_file}, using defaults - Auto-display: True, Crop mode: center_crop")
+                self.startup_delay_minutes = 1
+                self.refresh_interval_hours = 24
+                self.enable_timing_features = True
+                logger.info(f"Settings file not found at {settings_file}, using defaults")
         except Exception as e:
             logger.error(f"Error loading settings: {e}")
             # Fallback to defaults
             self.auto_display_uploads = True
             self.image_crop_mode = 'center_crop'
+            self.startup_delay_minutes = 1
+            self.refresh_interval_hours = 24
+            self.enable_timing_features = True
     
     def reload_settings(self):
         """Reload settings from file (useful when settings change)"""
@@ -247,6 +383,9 @@ class EinkDisplayHandler(FileSystemEventHandler):
         file_path = Path(event.src_path)
         logger.info(f"New file detected: {file_path.name}")
         
+        # Update timing variables
+        self.last_file_update_time = time.time()
+        
         # Longer delay to ensure file is fully written
         time.sleep(2.0)
         
@@ -263,6 +402,7 @@ class EinkDisplayHandler(FileSystemEventHandler):
         if self.auto_display_uploads:
             try:
                 self.display_file(file_path)
+                self.current_displayed_file = file_path  # Track current displayed file
                 logger.info(f"Auto-displayed file: {file_path.name}")
             except Exception as e:
                 logger.error(f"Error auto-displaying file {file_path.name}: {e}")
@@ -688,6 +828,11 @@ Examples:
   %(prog)s -f ~/my_files --clear-start        # Monitor ~/my_files, clear screen on start
   %(prog)s --no-clear-exit                    # Don't clear screen when exiting
   %(prog)s --normal-orientation               # Display in normal orientation (not upside-down)
+  %(prog)s --disable-timing                   # Disable automatic timing features
+
+Timing Features:
+  - Configurable startup display: Shows latest file if no updates occur within specified time of startup (default: 1 minute)
+  - Configurable refresh: Automatically refreshes display at specified interval to prevent ghosting (default: 24 hours)
         ''',
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -705,6 +850,12 @@ Examples:
                        help='Clear screen on start')
     parser.add_argument('--normal-orientation', action='store_true',
                        help='Display in normal orientation (not upside-down)')
+    parser.add_argument('--disable-timing', action='store_true',
+                       help='Disable automatic timing features (1-minute startup display, configurable refresh)')
+    parser.add_argument('--refresh-interval', type=int, default=24,
+                       help='Refresh interval in hours (default: 24)')
+    parser.add_argument('--startup-delay', type=int, default=1,
+                       help='Startup delay in minutes before displaying latest file (default: 1)')
     
     args = parser.parse_args()
     
@@ -733,6 +884,9 @@ Examples:
     DISPLAY_UPSIDE_DOWN = not args.normal_orientation
     CLEAR_ON_START = args.clear_start
     CLEAR_ON_EXIT = not args.no_clear_exit
+    DISABLE_TIMING = args.disable_timing
+    REFRESH_INTERVAL_HOURS = args.refresh_interval
+    STARTUP_DELAY_MINUTES = args.startup_delay
     
     # Set up signal handlers only if we're in the main thread
     signal_handlers_registered = False
@@ -748,7 +902,10 @@ Examples:
     # Create the handler
     handler = EinkDisplayHandler(WATCHED_FOLDER, 
                                clear_on_start=CLEAR_ON_START, 
-                               clear_on_exit=CLEAR_ON_EXIT)
+                               clear_on_exit=CLEAR_ON_EXIT,
+                               disable_timing=DISABLE_TIMING,
+                               refresh_interval_hours=REFRESH_INTERVAL_HOURS,
+                               startup_delay_minutes=STARTUP_DELAY_MINUTES)
     handler.display_upside_down = DISPLAY_UPSIDE_DOWN
     
     # Set up file system observer
@@ -769,6 +926,7 @@ Examples:
             if display_file_path.exists():
                 logger.info(f"Displaying initial file: {display_file_path}")
                 handler.display_file(display_file_path)
+                handler.current_displayed_file = display_file_path  # Track current displayed file
             else:
                 logger.error(f"Initial display file not found: {display_file_path}")
                 # Show error message on display
@@ -784,6 +942,7 @@ Examples:
             if latest_file:
                 logger.info(f"Displaying latest file: {latest_file}")
                 handler.display_file(latest_file)
+                handler.current_displayed_file = latest_file  # Track current displayed file
             else:
                 logger.info("No files found in watched folder, showing welcome screen")
                 handler.display_welcome_screen()

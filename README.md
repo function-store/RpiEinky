@@ -26,6 +26,7 @@ A comprehensive e-ink display management system with both file monitoring and **
 - **Auto-startup service** - Run automatically on system boot with systemd
 - **Simple clear script** - Quick command to clear the display
 - **IP address display** - Shows device IP on startup for easy remote access
+- **Automatic timing features** - 1-minute startup display and 24-hour refresh to prevent ghosting
 - **Smart image processing** - Configurable center-crop or letterbox modes
 - **Auto-display control** - Choose whether uploaded files display automatically
 - **Multi-format support**:
@@ -40,6 +41,44 @@ A comprehensive e-ink display management system with both file monitoring and **
 - **File management API** - List files, get latest file info, cleanup old files
 
 ## ⚙️ Settings & Configuration
+
+### ⏰ **Automatic Timing Features**
+
+The system includes two automatic timing features to improve display reliability:
+
+#### **🚀 Configurable Startup Display**
+- **Purpose**: Ensures the latest file is displayed if no updates occur within a configurable time of startup
+- **Behavior**: If no new files have been uploaded since the system started, it automatically displays the most recent file in the watched folder
+- **Default**: 1 minute
+- **Use case**: Useful when the system restarts and you want to ensure the display shows the last known content
+- **Configuration**: Use `--startup-delay <minutes>` to set custom delay (e.g., `--startup-delay 5` for 5 minutes)
+
+#### **🔄 Configurable Refresh**
+- **Purpose**: Prevents e-ink display ghosting by refreshing the display at a configurable interval
+- **Behavior**: Clears the display and re-displays the current content to maintain image quality
+- **Default**: 24 hours (manufacturer recommendation)
+- **Use case**: Manufacturer recommendation to prevent permanent ghosting on e-ink displays
+- **Implementation**: Uses clear and re-display method since the waveshare library doesn't have a dedicated refresh method
+- **Configuration**: Use `--refresh-interval <hours>` to set custom interval (e.g., `--refresh-interval 12` for 12 hours)
+
+#### **🎛️ Timing Control**
+- **Enable/Disable**: Use `--disable-timing` flag to turn off both timing features
+- **Startup Delay**: Use `--startup-delay <minutes>` to set custom startup delay
+- **Refresh Interval**: Use `--refresh-interval <hours>` to set custom refresh interval
+- **Threading**: Both features run in background threads and don't interfere with normal operation
+- **Logging**: All timing events are logged for monitoring and debugging
+
+**Common Startup Delays:**
+- `--startup-delay 0` - No delay, display immediately (if no updates)
+- `--startup-delay 1` - 1 minute delay (default)
+- `--startup-delay 5` - 5 minute delay (for slower networks)
+- `--startup-delay 10` - 10 minute delay (for very slow networks)
+
+**Common Refresh Intervals:**
+- `--refresh-interval 6` - Refresh every 6 hours (for high-usage environments)
+- `--refresh-interval 12` - Refresh every 12 hours (moderate usage)
+- `--refresh-interval 24` - Refresh every 24 hours (default, manufacturer recommendation)
+- `--refresh-interval 48` - Refresh every 48 hours (low-usage environments)
 
 ### 🎛️ **Web Interface Settings**
 Access settings via the **Settings** button in the web interface:
@@ -135,6 +174,9 @@ python display_latest.py
 # Create test files (in another terminal)
 source eink_env/bin/activate
 python test_display_system.py
+
+# Test timing features (optional)
+python test_timing_features.py
 ```
 
 ### Step 5: Additional Steps
@@ -187,6 +229,11 @@ python display_latest.py --clear-start --no-clear-exit  # Clear on start only
 
 # Change display orientation
 python display_latest.py --normal-orientation    # Normal (not upside-down)
+
+# Control timing features
+python display_latest.py --disable-timing        # Disable automatic timing features
+python display_latest.py --startup-delay 5       # Set startup delay to 5 minutes
+python display_latest.py --refresh-interval 12   # Set refresh interval to 12 hours
 
 # Combine multiple options
 python display_latest.py -d ~/welcome.jpg -f ~/my_files --clear-start --no-clear-exit

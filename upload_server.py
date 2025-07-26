@@ -39,7 +39,10 @@ DEFAULT_SETTINGS = {
     'image_crop_mode': 'center_crop',  # 'center_crop' or 'fit_with_letterbox'
     'auto_display_upload': True,       # Automatically display uploaded files
     'thumbnail_quality': 85,           # JPEG quality for thumbnails
-    'max_file_size_mb': 16            # Maximum file size in MB
+    'max_file_size_mb': 16,           # Maximum file size in MB
+    'startup_delay_minutes': 1,        # Startup delay before displaying latest file
+    'refresh_interval_hours': 24,      # Refresh interval to prevent ghosting
+    'enable_timing_features': True     # Enable automatic timing features
 }
 
 # Image extensions for thumbnail generation

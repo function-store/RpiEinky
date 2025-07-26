@@ -10,8 +10,13 @@ Group=gpio
 SupplementaryGroups=spi i2c gpio dialout
 WorkingDirectory=/home/danrasp/RpiEinky
 ExecStart=/home/danrasp/eink_env/bin/python /home/danrasp/RpiEinky/run_eink_system.py
+ExecStop=/bin/kill -TERM $MAINPID
 Restart=always
 RestartSec=10
+TimeoutStartSec=30
+TimeoutStopSec=30
+KillMode=mixed
+KillSignal=SIGTERM
 StandardOutput=journal
 StandardError=journal
 
@@ -21,6 +26,9 @@ Environment=DISPLAY=:0
 Environment=HOME=/home/danrasp
 Environment=USER=danrasp
 Environment=XDG_RUNTIME_DIR=/run/user/1000
+
+# Ensure clean restarts
+RemainAfterExit=no
 
 [Install]
 WantedBy=multi-user.target 

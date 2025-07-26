@@ -37,6 +37,12 @@ def run_display_monitor(args):
             display_args.append('--no-clear-exit')
         if args.normal_orientation:
             display_args.append('--normal-orientation')
+        if args.disable_timing:
+            display_args.append('--disable-timing')
+        if args.refresh_interval:
+            display_args.extend(['--refresh-interval', str(args.refresh_interval)])
+        if args.startup_delay:
+            display_args.extend(['--startup-delay', str(args.startup_delay)])
             
         sys.argv = display_args
         
@@ -133,6 +139,12 @@ Examples:
                        help='Do not clear screen on exit')
     parser.add_argument('--normal-orientation', action='store_true',
                        help='Display in normal orientation (not upside-down)')
+    parser.add_argument('--disable-timing', action='store_true',
+                       help='Disable automatic timing features (1-minute startup display, configurable refresh)')
+    parser.add_argument('--refresh-interval', type=int, default=24,
+                       help='Refresh interval in hours (default: 24)')
+    parser.add_argument('--startup-delay', type=int, default=1,
+                       help='Startup delay in minutes before displaying latest file (default: 1)')
     
     # Upload server arguments
     parser.add_argument('--port', '-p', type=int, default=5000,

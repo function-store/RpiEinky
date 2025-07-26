@@ -560,6 +560,11 @@ class EinkDisplayManager {
         const qualityValue = document.getElementById('thumbnail-quality-value');
         qualitySlider.value = settings.thumbnail_quality || 85;
         qualityValue.textContent = qualitySlider.value;
+        
+        // Set timing features
+        document.getElementById('enable-timing-features').checked = settings.enable_timing_features !== false;
+        document.getElementById('startup-delay').value = settings.startup_delay_minutes || 1;
+        document.getElementById('refresh-interval').value = settings.refresh_interval_hours || 24;
     }
     
     async saveSettings() {
@@ -567,7 +572,10 @@ class EinkDisplayManager {
             const settings = {
                 image_crop_mode: document.getElementById('image-crop-mode').value,
                 auto_display_upload: document.getElementById('auto-display-upload').checked,
-                thumbnail_quality: parseInt(document.getElementById('thumbnail-quality').value)
+                thumbnail_quality: parseInt(document.getElementById('thumbnail-quality').value),
+                enable_timing_features: document.getElementById('enable-timing-features').checked,
+                startup_delay_minutes: parseInt(document.getElementById('startup-delay').value),
+                refresh_interval_hours: parseInt(document.getElementById('refresh-interval').value)
             };
             
             const response = await fetch('/settings', {

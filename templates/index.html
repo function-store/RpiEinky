@@ -156,6 +156,30 @@
                         JPEG quality for image thumbnails (higher = better quality, larger files)
                     </p>
                 </div>
+                
+                <div class="setting-group">
+                    <label for="enable-timing-features">Enable Timing Features:</label>
+                    <input type="checkbox" id="enable-timing-features" class="setting-input">
+                    <p class="setting-description">
+                        Enable automatic startup display and refresh features
+                    </p>
+                </div>
+                
+                <div class="setting-group">
+                    <label for="startup-delay">Startup Delay (minutes):</label>
+                    <input type="number" id="startup-delay" class="setting-input" min="0" max="60" step="1">
+                    <p class="setting-description">
+                        Delay before displaying latest file on startup (0 = immediate, default: 1)
+                    </p>
+                </div>
+                
+                <div class="setting-group">
+                    <label for="refresh-interval">Refresh Interval (hours):</label>
+                    <input type="number" id="refresh-interval" class="setting-input" min="1" max="168" step="1">
+                    <p class="setting-description">
+                        How often to refresh the display to prevent ghosting (default: 24 hours)
+                    </p>
+                </div>
             </div>
             <div class="modal-footer">
                 <button class="btn secondary" id="settings-cancel">Cancel</button>
