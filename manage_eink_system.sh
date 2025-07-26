@@ -54,6 +54,32 @@ get_process_status() {
     fi
 }
 
+# Function to check if run_eink_system.py is running
+is_run_eink_system_running() {
+    pgrep -f "run_eink_system.py" >/dev/null 2>&1
+}
+
+# Function to get combined system status
+get_combined_system_status() {
+    local display_status=0
+    local server_status=0
+    
+    # Check if run_eink_system.py is running
+    if is_run_eink_system_running; then
+        local pid=$(pgrep -f "run_eink_system.py")
+        echo -e "${GREEN}✅ Display Monitor: RUNNING${NC} (via run_eink_system.py, PID: $pid)"
+        echo -e "${GREEN}✅ Upload Server: RUNNING${NC} (via run_eink_system.py, PID: $pid)"
+        return 0
+    else
+        # Fall back to individual PID file checks
+        get_process_status "$DISPLAY_PID_FILE" "Display Monitor"
+        display_status=$?
+        get_process_status "$SERVER_PID_FILE" "Upload Server"
+        server_status=$?
+        return $((display_status + server_status))
+    fi
+}
+
 # Function to check systemd service status
 get_systemd_status() {
     if systemctl is-active --quiet "$SERVICE_NAME"; then
@@ -204,9 +230,8 @@ show_status() {
     # Check systemd service
     get_systemd_status
     
-    # Check manual processes
-    get_process_status "$DISPLAY_PID_FILE" "Display Monitor"
-    get_process_status "$SERVER_PID_FILE" "Upload Server"
+    # Check combined system status
+    get_combined_system_status
     
     echo ""
     echo -e "${BLUE}🔧 Hardware Status:${NC}"
