@@ -42,7 +42,8 @@ DEFAULT_SETTINGS = {
     'max_file_size_mb': 16,           # Maximum file size in MB
     'startup_delay_minutes': 1,        # Startup delay before displaying latest file
     'refresh_interval_hours': 24,      # Refresh interval to prevent ghosting
-    'enable_timing_features': True,    # Enable automatic timing features
+    'disable_startup_timer': False,    # Disable automatic startup display timer
+    'disable_refresh_timer': False,    # Disable automatic refresh timer
     'enable_manufacturer_timing': False,  # Enable manufacturer timing requirements (180s minimum)
     'enable_sleep_mode': True  # Enable sleep mode between operations (power efficiency)
 }

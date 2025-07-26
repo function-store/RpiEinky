@@ -65,9 +65,11 @@ The system includes configurable timing features to improve display reliability 
 - **Configuration**: Use `--refresh-interval <hours>` to set custom interval (e.g., `--refresh-interval 12` for 12 hours)
 
 #### **🎛️ Timing Control**
-- **Enable/Disable**: Use `--disable-timing` flag to turn off both timing features
+- **Startup Timer**: Use `--disable-startup-timer` flag to disable automatic startup display
+- **Refresh Timer**: Use `--disable-refresh-timer` flag to disable automatic refresh
 - **Startup Delay**: Use `--startup-delay <minutes>` to set custom startup delay
 - **Refresh Interval**: Use `--refresh-interval <hours>` to set custom refresh interval
+- **Independent Control**: Each timer can be enabled/disabled separately
 - **Threading**: Both features run in background threads and don't interfere with normal operation
 - **Logging**: All timing events are logged for monitoring and debugging
 
@@ -111,6 +113,14 @@ Access settings via the **Settings** button in the web interface:
 #### **🖼️ Thumbnail Quality**
 - **Range:** 50-95 (JPEG quality)
 - **Default:** 85 (good balance of quality/size)
+
+#### **🚀 Startup Timer**
+- **Enabled (Default):** Automatically displays latest file after startup delay
+- **Disabled:** No automatic startup display
+
+#### **🔄 Refresh Timer**
+- **Enabled (Default):** Automatically refreshes display at configured interval
+- **Disabled:** No automatic refresh (may cause ghosting over time)
 
 #### **🔧 Manufacturer Timing Requirements**
 - **Enabled:** Enforces 180-second minimum between refreshes, queues rapid uploads
@@ -276,9 +286,12 @@ python display_latest.py -d ~/welcome.jpg -f ~/my_files --clear-start --no-clear
 | `--clear-start` | - | Clear screen on startup | False |
 | `--no-clear-exit` | - | Don't clear screen when exiting | False |
 | `--normal-orientation` | - | Display in normal orientation (not upside-down) | False |
-| `--disable-timing` | - | Disable automatic timing features (startup display and refresh) | False |
+| `--disable-startup-timer` | - | Disable automatic startup display timer | False |
+| `--disable-refresh-timer` | - | Disable automatic refresh timer | False |
 | `--startup-delay` | - | Minutes to wait before displaying latest file on startup | 1 |
 | `--refresh-interval` | - | Hours between display refreshes to prevent ghosting | 24 |
+| `--enable-manufacturer-timing` | - | Enable manufacturer timing requirements (180s minimum) | False |
+| `--disable-sleep-mode` | - | Disable sleep mode between operations (faster but uses more power) | False |
 | `--help` | `-h` | Show help message and exit | - |
 
 ### Supported File Types
@@ -1261,16 +1274,32 @@ python display_latest.py --folder ~/kiosk_files --clear-start
 python display_latest.py --normal-orientation --no-clear-exit
 
 # Control timing features
-python display_latest.py --disable-timing        # Disable automatic timing
+python display_latest.py --disable-startup-timer  # Disable startup timer only
+python display_latest.py --disable-refresh-timer  # Disable refresh timer only
 python display_latest.py --startup-delay 5       # 5-minute startup delay
 python display_latest.py --refresh-interval 12   # 12-hour refresh interval
 
+# Control manufacturer requirements and sleep mode
+python display_latest.py --enable-manufacturer-timing  # Enable 180s minimum refresh
+python display_latest.py --disable-sleep-mode         # Disable sleep mode (faster)
+
 # Full featured: custom folder, initial file, controlled clearing, timing
-python display_latest.py -f ~/display_queue -d ~/status.txt --clear-start --no-clear-exit --startup-delay 2 --refresh-interval 6
+python display_latest.py -f ~/display_queue -d ~/status.txt --clear-start --no-clear-exit --startup-delay 2 --refresh-interval 6 --disable-startup-timer --enable-manufacturer-timing
 
 # Just clear the display
 python clear_display.py
-```
+
+# Complete example with all timing options
+python display_latest.py \
+  --folder ~/my_display_files \
+  --display-file ~/welcome.jpg \
+  --clear-start \
+  --no-clear-exit \
+  --normal-orientation \
+  --disable-startup-timer \
+  --refresh-interval 12 \
+  --enable-manufacturer-timing \
+  --disable-sleep-mode
 
 ### Web Interface Examples
 

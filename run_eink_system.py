@@ -37,12 +37,18 @@ def run_display_monitor(args):
             display_args.append('--no-clear-exit')
         if args.normal_orientation:
             display_args.append('--normal-orientation')
-        if args.disable_timing:
-            display_args.append('--disable-timing')
+        if args.disable_startup_timer:
+            display_args.append('--disable-startup-timer')
+        if args.disable_refresh_timer:
+            display_args.append('--disable-refresh-timer')
         if args.refresh_interval:
             display_args.extend(['--refresh-interval', str(args.refresh_interval)])
         if args.startup_delay:
             display_args.extend(['--startup-delay', str(args.startup_delay)])
+        if args.enable_manufacturer_timing:
+            display_args.append('--enable-manufacturer-timing')
+        if args.disable_sleep_mode:
+            display_args.append('--disable-sleep-mode')
             
         sys.argv = display_args
         
@@ -139,12 +145,18 @@ Examples:
                        help='Do not clear screen on exit')
     parser.add_argument('--normal-orientation', action='store_true',
                        help='Display in normal orientation (not upside-down)')
-    parser.add_argument('--disable-timing', action='store_true',
-                       help='Disable automatic timing features (1-minute startup display, configurable refresh)')
+    parser.add_argument('--disable-startup-timer', action='store_true',
+                       help='Disable automatic startup display timer')
+    parser.add_argument('--disable-refresh-timer', action='store_true',
+                       help='Disable automatic refresh timer')
     parser.add_argument('--refresh-interval', type=int, default=24,
                        help='Refresh interval in hours (default: 24)')
     parser.add_argument('--startup-delay', type=int, default=1,
                        help='Startup delay in minutes before displaying latest file (default: 1)')
+    parser.add_argument('--enable-manufacturer-timing', action='store_true',
+                       help='Enable manufacturer timing requirements (180s minimum refresh interval)')
+    parser.add_argument('--disable-sleep-mode', action='store_true',
+                       help='Disable sleep mode between operations (faster but uses more power)')
     
     # Upload server arguments
     parser.add_argument('--port', '-p', type=int, default=5000,

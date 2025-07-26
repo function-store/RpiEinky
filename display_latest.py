@@ -97,7 +97,7 @@ def signal_handler_clear_exit(signum, frame):
 
 
 class EinkDisplayHandler(FileSystemEventHandler):
-    def __init__(self, watched_folder="./watched_files", clear_on_start=False, clear_on_exit=True, disable_timing=False, refresh_interval_hours=24, startup_delay_minutes=1, enable_manufacturer_timing=False, enable_sleep_mode=True):
+    def __init__(self, watched_folder="./watched_files", clear_on_start=False, clear_on_exit=True, disable_startup_timer=False, disable_refresh_timer=False, refresh_interval_hours=24, startup_delay_minutes=1, enable_manufacturer_timing=False, enable_sleep_mode=True):
         self.watched_folder = Path(watched_folder)
         self.watched_folder.mkdir(exist_ok=True)
         self.clear_on_start = clear_on_start
@@ -146,7 +146,8 @@ class EinkDisplayHandler(FileSystemEventHandler):
         # Set initial timing values from constructor parameters
         self.refresh_interval_hours = refresh_interval_hours
         self.startup_delay_minutes = startup_delay_minutes
-        self.enable_timing_features = not disable_timing
+        self.disable_startup_timer = disable_startup_timer
+        self.disable_refresh_timer = disable_refresh_timer
         
         # Load settings (this will override timing values from settings file if available)
         self.load_settings()
@@ -154,11 +155,22 @@ class EinkDisplayHandler(FileSystemEventHandler):
         # Start background threads for timing features (unless disabled)
         self.startup_timer_thread = None
         self.refresh_timer_thread = None
-        if self.enable_timing_features:
-            self.start_timing_threads()
-            logger.info(f"Timing features enabled: {self.startup_delay_minutes}-minute startup display, {self.refresh_interval_hours}-hour refresh")
+        
+        # Start startup timer if enabled
+        if not self.disable_startup_timer:
+            self.startup_timer_thread = threading.Thread(target=self.startup_timer_worker, daemon=True)
+            self.startup_timer_thread.start()
+            logger.info(f"Startup timer enabled: {self.startup_delay_minutes}-minute delay")
         else:
-            logger.info("Timing features disabled")
+            logger.info("Startup timer disabled")
+            
+        # Start refresh timer if enabled
+        if not self.disable_refresh_timer:
+            self.refresh_timer_thread = threading.Thread(target=self.refresh_timer_worker, daemon=True)
+            self.refresh_timer_thread.start()
+            logger.info(f"Refresh timer enabled: {self.refresh_interval_hours}-hour interval")
+        else:
+            logger.info("Refresh timer disabled")
         
         logger.info(f"Monitoring folder: {self.watched_folder.absolute()}")
         logger.info(f"E-ink display initialized - Size: {self.epd.width}x{self.epd.height}")
@@ -166,17 +178,7 @@ class EinkDisplayHandler(FileSystemEventHandler):
         logger.info(f"Manufacturer timing requirements: {'ENABLED' if self.enable_manufacturer_timing else 'DISABLED'}")
         logger.info(f"Sleep mode: {'ENABLED' if self.enable_sleep_mode else 'DISABLED'}")
     
-    def start_timing_threads(self):
-        """Start background threads for timing-based features"""
-        # Start 1-minute startup timer thread
-        self.startup_timer_thread = threading.Thread(target=self.startup_timer_worker, daemon=True)
-        self.startup_timer_thread.start()
-        
-        # Start N-hour refresh timer thread
-        self.refresh_timer_thread = threading.Thread(target=self.refresh_timer_worker, daemon=True)
-        self.refresh_timer_thread.start()
-        
-        logger.info("Background timing threads started")
+
     
     def startup_timer_worker(self):
         """Worker thread for configurable startup display delay"""
@@ -280,19 +282,22 @@ class EinkDisplayHandler(FileSystemEventHandler):
                     # Load timing settings
                     self.startup_delay_minutes = settings.get('startup_delay_minutes', 1)
                     self.refresh_interval_hours = settings.get('refresh_interval_hours', 24)
-                    self.enable_timing_features = settings.get('enable_timing_features', True)
+                    self.disable_startup_timer = settings.get('disable_startup_timer', False)
+                    self.disable_refresh_timer = settings.get('disable_refresh_timer', False)
                     self.enable_manufacturer_timing = settings.get('enable_manufacturer_timing', False)
                     self.enable_sleep_mode = settings.get('enable_sleep_mode', True)
                     
                     logger.info(f"Settings loaded from {settings_file} - Auto-display: {self.auto_display_uploads}, Crop mode: {self.image_crop_mode}")
-                    logger.info(f"Timing settings - Enabled: {self.enable_timing_features}, Startup delay: {self.startup_delay_minutes}min, Refresh: {self.refresh_interval_hours}h")
+                    logger.info(f"Timing settings - Startup timer: {'DISABLED' if self.disable_startup_timer else 'ENABLED'}, Refresh timer: {'DISABLED' if self.disable_refresh_timer else 'ENABLED'}")
+                    logger.info(f"Timing values - Startup delay: {self.startup_delay_minutes}min, Refresh: {self.refresh_interval_hours}h")
             else:
                 # Default settings
                 self.auto_display_uploads = True
                 self.image_crop_mode = 'center_crop'
                 self.startup_delay_minutes = 1
                 self.refresh_interval_hours = 24
-                self.enable_timing_features = True
+                self.disable_startup_timer = False
+                self.disable_refresh_timer = False
                 self.enable_manufacturer_timing = False
                 self.enable_sleep_mode = True
                 logger.info(f"Settings file not found at {settings_file}, using defaults")
@@ -303,8 +308,10 @@ class EinkDisplayHandler(FileSystemEventHandler):
             self.image_crop_mode = 'center_crop'
             self.startup_delay_minutes = 1
             self.refresh_interval_hours = 24
-            self.enable_timing_features = True
+            self.disable_startup_timer = False
+            self.disable_refresh_timer = False
             self.enable_manufacturer_timing = False
+            self.enable_sleep_mode = True
     
     def reload_settings(self):
         """Reload settings from file (useful when settings change)"""
@@ -935,12 +942,18 @@ Timing Features:
                        help='Clear screen on start')
     parser.add_argument('--normal-orientation', action='store_true',
                        help='Display in normal orientation (not upside-down)')
-    parser.add_argument('--disable-timing', action='store_true',
-                       help='Disable automatic timing features (1-minute startup display, configurable refresh)')
+    parser.add_argument('--disable-startup-timer', action='store_true',
+                       help='Disable automatic startup display timer')
+    parser.add_argument('--disable-refresh-timer', action='store_true',
+                       help='Disable automatic refresh timer')
     parser.add_argument('--refresh-interval', type=int, default=24,
                        help='Refresh interval in hours (default: 24)')
     parser.add_argument('--startup-delay', type=int, default=1,
                        help='Startup delay in minutes before displaying latest file (default: 1)')
+    parser.add_argument('--enable-manufacturer-timing', action='store_true',
+                       help='Enable manufacturer timing requirements (180s minimum refresh interval)')
+    parser.add_argument('--disable-sleep-mode', action='store_true',
+                       help='Disable sleep mode between operations (faster but uses more power)')
     
     args = parser.parse_args()
     
@@ -969,9 +982,12 @@ Timing Features:
     DISPLAY_UPSIDE_DOWN = not args.normal_orientation
     CLEAR_ON_START = args.clear_start
     CLEAR_ON_EXIT = not args.no_clear_exit
-    DISABLE_TIMING = args.disable_timing
+    DISABLE_STARTUP_TIMER = args.disable_startup_timer
+    DISABLE_REFRESH_TIMER = args.disable_refresh_timer
     REFRESH_INTERVAL_HOURS = args.refresh_interval
     STARTUP_DELAY_MINUTES = args.startup_delay
+    ENABLE_MANUFACTURER_TIMING = args.enable_manufacturer_timing
+    ENABLE_SLEEP_MODE = not args.disable_sleep_mode
     
     # Set up signal handlers only if we're in the main thread
     signal_handlers_registered = False
@@ -988,11 +1004,12 @@ Timing Features:
     handler = EinkDisplayHandler(WATCHED_FOLDER, 
                                clear_on_start=CLEAR_ON_START, 
                                clear_on_exit=CLEAR_ON_EXIT,
-                               disable_timing=DISABLE_TIMING,
+                               disable_startup_timer=DISABLE_STARTUP_TIMER,
+                               disable_refresh_timer=DISABLE_REFRESH_TIMER,
                                refresh_interval_hours=REFRESH_INTERVAL_HOURS,
                                startup_delay_minutes=STARTUP_DELAY_MINUTES,
-                               enable_manufacturer_timing=False,  # Default to disabled
-                               enable_sleep_mode=True)  # Default to enabled
+                               enable_manufacturer_timing=ENABLE_MANUFACTURER_TIMING,
+                               enable_sleep_mode=ENABLE_SLEEP_MODE)
     handler.display_upside_down = DISPLAY_UPSIDE_DOWN
     
     # Set up file system observer
