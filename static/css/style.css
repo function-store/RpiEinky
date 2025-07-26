@@ -500,8 +500,12 @@ body {
     border-radius: 12px;
     max-width: 500px;
     width: 90%;
+    max-height: 80vh;
     box-shadow: var(--shadow-lg);
     border: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
 }
 
 .modal-header {
@@ -517,6 +521,8 @@ body {
 .modal-body {
     padding: 16px 24px;
     color: var(--text-secondary);
+    overflow-y: auto;
+    flex: 1;
 }
 
 .modal-footer {
@@ -551,8 +557,37 @@ body {
 }
 
 /* Settings Styles */
+.settings-section {
+    margin-bottom: 30px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.settings-section:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+}
+
+.settings-section h4 {
+    color: var(--primary-color);
+    margin: 0 0 15px 0;
+    font-size: 16px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.settings-section h4 i {
+    font-size: 14px;
+}
+
 .setting-group {
     margin-bottom: 24px;
+}
+
+.setting-group:last-child {
+    margin-bottom: 0;
 }
 
 .setting-group label {
@@ -612,6 +647,25 @@ body {
     color: var(--primary-color);
 }
 
+/* Custom scrollbar for modal body */
+.modal-body::-webkit-scrollbar {
+    width: 8px;
+}
+
+.modal-body::-webkit-scrollbar-track {
+    background: var(--card-bg);
+    border-radius: 4px;
+}
+
+.modal-body::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 4px;
+}
+
+.modal-body::-webkit-scrollbar-thumb:hover {
+    background: var(--text-secondary);
+}
+
 /* Responsive Design */
 @media (max-width: 768px) {
     .container {
@@ -648,6 +702,29 @@ body {
     
     .toast {
         max-width: none;
+    }
+    
+    .modal {
+        margin: 20px;
+        max-height: calc(100vh - 40px);
+        width: calc(100% - 40px);
+    }
+    
+    .modal-body {
+        max-height: calc(100vh - 200px);
+    }
+    
+    .settings-section {
+        margin-bottom: 20px;
+        padding-bottom: 15px;
+    }
+    
+    .settings-section h4 {
+        font-size: 14px;
+    }
+    
+    .setting-description {
+        font-size: 11px;
     }
 }
 
