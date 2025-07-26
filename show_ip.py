@@ -81,10 +81,8 @@ def main():
         description='Display device IP address on e-ink display',
         epilog='This script shows the IP address and exits. Useful for quick IP checks.'
     )
-    parser.add_argument('--normal-orientation', action='store_true',
-                       help='Display in normal orientation (not upside-down)')
     parser.add_argument('--orientation', choices=['landscape', 'landscape_flipped', 'portrait', 'portrait_flipped'],
-                       help='Display orientation (overrides normal-orientation)')
+                       help='Display orientation (default: landscape)')
     parser.add_argument('--no-clear', action='store_true',
                        help='Do not clear display before showing IP')
     
@@ -166,9 +164,9 @@ def main():
             elif args.orientation == 'portrait_flipped':
                 # Rotate 270 degrees clockwise (or 90 degrees counter-clockwise)
                 display_image = display_image.rotate(270, expand=True)
-        elif not args.normal_orientation:
-            # Legacy behavior: Default is upside-down (180 degree rotation)
-            display_image = display_image.rotate(180)
+        else:
+            # Default is landscape (no rotation)
+            pass
         
         # Display the image
         epd.display(epd.getbuffer(display_image))

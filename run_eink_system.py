@@ -35,8 +35,6 @@ def run_display_monitor(args):
             display_args.append('--clear-start')
         if args.no_clear_exit:
             display_args.append('--no-clear-exit')
-        if args.normal_orientation:
-            display_args.append('--normal-orientation')
         if args.orientation:
             display_args.extend(['--orientation', args.orientation])
         if args.disable_startup_timer:
@@ -145,10 +143,8 @@ Examples:
                        help='Clear screen on start')
     parser.add_argument('--no-clear-exit', action='store_true',
                        help='Do not clear screen on exit')
-    parser.add_argument('--normal-orientation', action='store_true',
-                       help='Display in normal orientation (not upside-down)')
     parser.add_argument('--orientation', choices=['landscape', 'landscape_flipped', 'portrait', 'portrait_flipped'],
-                       help='Display orientation (overrides normal-orientation)')
+                       help='Display orientation (default: landscape)')
     parser.add_argument('--disable-startup-timer', action='store_true',
                        help='Disable automatic startup display timer')
     parser.add_argument('--disable-refresh-timer', action='store_true',

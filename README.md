@@ -263,7 +263,7 @@ python display_latest.py --no-clear-exit         # Don't clear screen on exit
 python display_latest.py --clear-start --no-clear-exit  # Clear on start only
 
 # Change display orientation
-python display_latest.py --normal-orientation    # Normal (not upside-down)
+python display_latest.py --orientation landscape    # Normal (not upside-down)
 
 # Control timing features
 python display_latest.py --disable-timing        # Disable automatic timing features
@@ -1386,7 +1386,7 @@ python display_latest.py \
 
 # Photo frame: Normal orientation, show default photo, monitor photos folder
 python display_latest.py \
-  --normal-orientation \
+  --orientation landscape \
   --display-file ~/photos/default.jpg \
   --folder ~/photos/new \
   --no-clear-exit

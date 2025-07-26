@@ -113,8 +113,8 @@ class EinkDisplayHandler(FileSystemEventHandler):
             time.sleep(1)
         
         # Configure display orientation 
-        # Set to True to rotate display 180 degrees (upside-down)
-        self.display_upside_down = True
+        # Default orientation (will be overridden by settings or command line)
+        self.orientation = 'landscape'
         
         # Configure image processing mode
         self.image_crop_mode = 'center_crop'  # 'center_crop' or 'fit_with_letterbox'
@@ -174,6 +174,7 @@ class EinkDisplayHandler(FileSystemEventHandler):
         
         logger.info(f"Monitoring folder: {self.watched_folder.absolute()}")
         logger.info(f"E-ink display initialized - Size: {self.epd.width}x{self.epd.height}")
+        logger.info(f"Display orientation: {self.orientation}")
         logger.info(f"Auto-display uploads: {self.auto_display_uploads}")
         logger.info(f"Manufacturer timing requirements: {'ENABLED' if self.enable_manufacturer_timing else 'DISABLED'}")
         logger.info(f"Sleep mode: {'ENABLED' if self.enable_sleep_mode else 'DISABLED'}")
@@ -279,6 +280,9 @@ class EinkDisplayHandler(FileSystemEventHandler):
                     self.auto_display_uploads = settings.get('auto_display_upload', True)
                     self.image_crop_mode = settings.get('image_crop_mode', 'center_crop')
                     
+                    # Load orientation setting
+                    self.orientation = settings.get('orientation', 'landscape')
+                    
                     # Load timing settings
                     self.startup_delay_minutes = settings.get('startup_delay_minutes', 1)
                     self.refresh_interval_hours = settings.get('refresh_interval_hours', 24)
@@ -287,13 +291,14 @@ class EinkDisplayHandler(FileSystemEventHandler):
                     self.enable_manufacturer_timing = settings.get('enable_manufacturer_timing', False)
                     self.enable_sleep_mode = settings.get('enable_sleep_mode', True)
                     
-                    logger.info(f"Settings loaded from {settings_file} - Auto-display: {self.auto_display_uploads}, Crop mode: {self.image_crop_mode}")
+                    logger.info(f"Settings loaded from {settings_file} - Auto-display: {self.auto_display_uploads}, Crop mode: {self.image_crop_mode}, Orientation: {self.orientation}")
                     logger.info(f"Timing settings - Startup timer: {'DISABLED' if self.disable_startup_timer else 'ENABLED'}, Refresh timer: {'DISABLED' if self.disable_refresh_timer else 'ENABLED'}")
                     logger.info(f"Timing values - Startup delay: {self.startup_delay_minutes}min, Refresh: {self.refresh_interval_hours}h")
             else:
                 # Default settings
                 self.auto_display_uploads = True
                 self.image_crop_mode = 'center_crop'
+                self.orientation = 'landscape'
                 self.startup_delay_minutes = 1
                 self.refresh_interval_hours = 24
                 self.disable_startup_timer = False
@@ -306,6 +311,7 @@ class EinkDisplayHandler(FileSystemEventHandler):
             # Fallback to defaults
             self.auto_display_uploads = True
             self.image_crop_mode = 'center_crop'
+            self.orientation = 'landscape'
             self.startup_delay_minutes = 1
             self.refresh_interval_hours = 24
             self.disable_startup_timer = False
@@ -316,7 +322,33 @@ class EinkDisplayHandler(FileSystemEventHandler):
     def reload_settings(self):
         """Reload settings from file (useful when settings change)"""
         self.load_settings()
-        logger.info(f"Settings reloaded - Auto-display: {self.auto_display_uploads}, Crop mode: {self.image_crop_mode}")
+        logger.info(f"Settings reloaded - Auto-display: {self.auto_display_uploads}, Crop mode: {self.image_crop_mode}, Orientation: {self.orientation}")
+    
+    def apply_orientation(self, image):
+        """Apply orientation transformation to an image based on current orientation setting"""
+        try:
+            orientation = getattr(self, 'orientation', 'landscape')
+            
+            if orientation == 'landscape':
+                # No rotation needed
+                return image
+            elif orientation == 'landscape_flipped':
+                # Rotate 180 degrees
+                return image.rotate(180)
+            elif orientation == 'portrait':
+                # Rotate 90 degrees clockwise
+                return image.rotate(90, expand=True)
+            elif orientation == 'portrait_flipped':
+                # Rotate 270 degrees clockwise (or 90 degrees counter-clockwise)
+                return image.rotate(270, expand=True)
+            else:
+                # Unknown orientation, return original
+                logger.warning(f"Unknown orientation: {orientation}, using landscape")
+                return image
+                
+        except Exception as e:
+            logger.error(f"Error applying orientation {getattr(self, 'orientation', 'landscape')}: {e}")
+            return image
     
     def get_latest_file(self):
         """Get the most recent file in the watched folder"""
@@ -384,9 +416,8 @@ class EinkDisplayHandler(FileSystemEventHandler):
             else:
                 logger.info("Starting display operation (sleep mode disabled)...")
             
-            if self.display_upside_down:
-                # Simple 180-degree rotation using PIL
-                image = image.rotate(180)
+            # Apply orientation
+            image = self.apply_orientation(image)
 
             logger.info("Calling epd.display()...")
             self.epd.display(self.epd.getbuffer(image))
@@ -411,8 +442,8 @@ class EinkDisplayHandler(FileSystemEventHandler):
                 logger.info("Attempting to reinitialize display...")
                 self.reinitialize_display()
                 # Try again after reinitializing
-                if self.display_upside_down:
-                    image = image.rotate(180)
+                # Apply orientation again after reinitialization
+                image = self.apply_orientation(image)
                 self.epd.display(self.epd.getbuffer(image))
                 if self.enable_sleep_mode:
                     self.epd.sleep()  # Put to sleep after successful retry
@@ -523,9 +554,8 @@ class EinkDisplayHandler(FileSystemEventHandler):
                     image = image.convert('RGB')
             
 
-            if 'portrait' in self.orientation:
-                degree = 90 if 'upside_down' in self.orientation else 270
-                image = image.rotate(degree, expand = self.image_crop_mode == 'center_crop')
+            # Apply orientation
+            image = self.apply_orientation(image)
 
             # Resize and crop to fit display
             processed_image = self.resize_image_to_fit(image)
@@ -602,6 +632,9 @@ class EinkDisplayHandler(FileSystemEventHandler):
                     draw.text((5, y_pos), line, font=self.font_small, fill=self.epd.BLACK)
                     y_pos += line_height
             
+            # Apply orientation to the display image
+            display_image = self.apply_orientation(display_image)
+            
             success = self.display_buffer(display_image)
             if success:
                 logger.info(f"Displayed text file: {file_path.name}")
@@ -638,6 +671,9 @@ class EinkDisplayHandler(FileSystemEventHandler):
                     x_offset = (self.epd.height - pdf_image.width) // 2
                     y_offset = (self.epd.width - pdf_image.height) // 2
                     display_image.paste(pdf_image, (x_offset, y_offset))
+                    
+                    # Apply orientation to the display image
+                    display_image = self.apply_orientation(display_image)
                     
                     success = self.display_buffer(display_image)
                     if success:
@@ -701,6 +737,9 @@ class EinkDisplayHandler(FileSystemEventHandler):
                 
                 y_pos += 5  # Extra spacing
             
+            # Apply orientation to the display image
+            display_image = self.apply_orientation(display_image)
+            
             success = self.display_buffer(display_image)
             if success:
                 logger.info(f"Displayed file info: {file_path.name}")
@@ -744,6 +783,9 @@ class EinkDisplayHandler(FileSystemEventHandler):
             if current_line and y_pos <= self.epd.width - 30:
                 draw.text((5, y_pos), current_line.strip(), 
                         font=self.font_small, fill=self.epd.BLACK)
+            
+            # Apply orientation to the display image
+            display_image = self.apply_orientation(display_image)
             
             self.display_buffer(display_image)
             logger.error(f"Displayed error for: {filename}")
@@ -792,6 +834,9 @@ class EinkDisplayHandler(FileSystemEventHandler):
             y_pos += 15
             draw.text((5, y_pos), "for file uploads", font=self.font_small, fill=self.epd.BLACK)
             
+            # Apply orientation to the display image
+            display_image = self.apply_orientation(display_image)
+            
             self.display_buffer(display_image)
             logger.info(f"Displayed IP address: {ip_address} (hostname: {hostname})")
             
@@ -833,6 +878,9 @@ class EinkDisplayHandler(FileSystemEventHandler):
             # Status message
             y_pos += 20
             draw.text((5, y_pos), "Ready for uploads!", font=self.font_medium, fill=self.epd.RED)
+            
+            # Apply orientation to the display image
+            display_image = self.apply_orientation(display_image)
             
             self.display_buffer(display_image)
             logger.info(f"Displayed welcome screen - IP: {ip_address}, Web: {web_url}")
@@ -925,8 +973,15 @@ Examples:
   %(prog)s -d image.jpg                       # Display image.jpg on startup, then monitor
   %(prog)s -f ~/my_files --clear-start        # Monitor ~/my_files, clear screen on start
   %(prog)s --no-clear-exit                    # Don't clear screen when exiting
-  %(prog)s --normal-orientation               # Display in normal orientation (not upside-down)
+  %(prog)s --orientation portrait             # Display in portrait orientation
+  %(prog)s --orientation portrait_flipped     # Display in flipped portrait orientation
   %(prog)s --disable-timing                   # Disable automatic timing features
+
+Orientation Options:
+  - landscape: Normal horizontal orientation (default)
+  - landscape_flipped: Upside-down horizontal orientation
+  - portrait: Vertical orientation (rotated 90° clockwise)
+  - portrait_flipped: Flipped vertical orientation (rotated 270° clockwise)
 
 Timing Features:
   - Configurable startup display: Shows latest file if no updates occur within specified time of startup (default: 1 minute)
@@ -946,8 +1001,8 @@ Timing Features:
                        help='Do not clear screen on exit')
     parser.add_argument('--clear-start', action='store_true',
                        help='Clear screen on start')
-    parser.add_argument('--normal-orientation', action='store_true',
-                       help='Display in normal orientation (not upside-down)')
+    parser.add_argument('--orientation', choices=['landscape', 'landscape_flipped', 'portrait', 'portrait_flipped'],
+                       default='landscape', help='Display orientation (default: landscape)')
     parser.add_argument('--disable-startup-timer', action='store_true',
                        help='Disable automatic startup display timer')
     parser.add_argument('--disable-refresh-timer', action='store_true',
@@ -972,7 +1027,7 @@ Timing Features:
             
             # Create temporary handler just to display IP
             temp_handler = EinkDisplayHandler(clear_on_start=False, clear_on_exit=False)
-            temp_handler.display_upside_down = not args.normal_orientation
+            temp_handler.orientation = args.orientation
             temp_handler.display_ip_address()
             
             # Clean up
@@ -985,7 +1040,7 @@ Timing Features:
     
     # Configuration
     WATCHED_FOLDER = os.path.expanduser(args.folder)
-    DISPLAY_UPSIDE_DOWN = not args.normal_orientation
+    ORIENTATION = args.orientation
     CLEAR_ON_START = args.clear_start
     CLEAR_ON_EXIT = not args.no_clear_exit
     DISABLE_STARTUP_TIMER = args.disable_startup_timer
@@ -1016,7 +1071,7 @@ Timing Features:
                                startup_delay_minutes=STARTUP_DELAY_MINUTES,
                                enable_manufacturer_timing=ENABLE_MANUFACTURER_TIMING,
                                enable_sleep_mode=ENABLE_SLEEP_MODE)
-    handler.display_upside_down = DISPLAY_UPSIDE_DOWN
+    handler.orientation = ORIENTATION
     
     # Set up file system observer
     observer = Observer()
