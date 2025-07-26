@@ -565,6 +565,8 @@ class EinkDisplayManager {
         document.getElementById('enable-timing-features').checked = settings.enable_timing_features !== false;
         document.getElementById('startup-delay').value = settings.startup_delay_minutes || 1;
         document.getElementById('refresh-interval').value = settings.refresh_interval_hours || 24;
+        document.getElementById('enable-manufacturer-timing').checked = settings.enable_manufacturer_timing === true;
+        document.getElementById('enable-sleep-mode').checked = settings.enable_sleep_mode !== false;
     }
     
     async saveSettings() {
@@ -575,7 +577,9 @@ class EinkDisplayManager {
                 thumbnail_quality: parseInt(document.getElementById('thumbnail-quality').value),
                 enable_timing_features: document.getElementById('enable-timing-features').checked,
                 startup_delay_minutes: parseInt(document.getElementById('startup-delay').value),
-                refresh_interval_hours: parseInt(document.getElementById('refresh-interval').value)
+                refresh_interval_hours: parseInt(document.getElementById('refresh-interval').value),
+                enable_manufacturer_timing: document.getElementById('enable-manufacturer-timing').checked,
+                enable_sleep_mode: document.getElementById('enable-sleep-mode').checked
             };
             
             const response = await fetch('/settings', {

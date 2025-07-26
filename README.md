@@ -13,8 +13,9 @@ A comprehensive e-ink display management system with both file monitoring and **
 - **Real-time status** - Live connection status and upload progress
 - **Mobile-friendly** - Works perfectly on phones, tablets, and desktop
 - **File previews** - Automatic thumbnail generation for images
-- **Configurable settings** - Control image processing, auto-display, and thumbnail quality
+- **Configurable settings** - Control image processing, auto-display, thumbnail quality, and timing options
 - **Smart image processing** - Center-crop or letterbox modes for perfect display fit
+- **Manufacturer timing options** - Configurable 180-second minimum refresh and sleep mode settings
 
 ### 📟 **Core Display System**
 - **Real-time file monitoring** - Watches `~/watched_files` folder (or custom folder) for new files
@@ -24,9 +25,11 @@ A comprehensive e-ink display management system with both file monitoring and **
 - **Initial file display** - Show a specific file immediately on startup
 - **Flexible screen control** - Choose when to clear screen (startup, exit, both, or never)
 - **Auto-startup service** - Run automatically on system boot with systemd
+- **Management scripts** - Easy start, stop, restart, and monitoring without system reboot
 - **Simple clear script** - Quick command to clear the display
 - **IP address display** - Shows device IP on startup for easy remote access
-- **Automatic timing features** - 1-minute startup display and 24-hour refresh to prevent ghosting
+- **Automatic timing features** - Configurable startup display and refresh intervals to prevent ghosting
+- **Manufacturer timing options** - Optional 180-second minimum refresh and sleep mode for display health
 - **Smart image processing** - Configurable center-crop or letterbox modes
 - **Auto-display control** - Choose whether uploaded files display automatically
 - **Multi-format support**:
@@ -44,7 +47,7 @@ A comprehensive e-ink display management system with both file monitoring and **
 
 ### ⏰ **Automatic Timing Features**
 
-The system includes two automatic timing features to improve display reliability:
+The system includes configurable timing features to improve display reliability and follow manufacturer recommendations:
 
 #### **🚀 Configurable Startup Display**
 - **Purpose**: Ensures the latest file is displayed if no updates occur within a configurable time of startup
@@ -67,6 +70,20 @@ The system includes two automatic timing features to improve display reliability
 - **Refresh Interval**: Use `--refresh-interval <hours>` to set custom refresh interval
 - **Threading**: Both features run in background threads and don't interfere with normal operation
 - **Logging**: All timing events are logged for monitoring and debugging
+
+#### **🔧 Manufacturer Timing Requirements (Optional)**
+- **180-Second Minimum**: Enforces 3-minute minimum between display refreshes (manufacturer requirement)
+- **Smart Queuing**: Rapid uploads are queued and displayed after timing allows
+- **Automatic Retries**: Failed operations retry after minimum interval
+- **Default**: Disabled (allows immediate uploads)
+- **Configuration**: Enable via web interface settings
+
+#### **😴 Sleep Mode (Optional)**
+- **Power Efficiency**: Puts display to sleep between operations to reduce power consumption
+- **Display Health**: Prevents damage from long-term power-on
+- **Wake Time**: Adds ~0.5-1 second wake time per operation
+- **Default**: Enabled (recommended for display longevity)
+- **Configuration**: Enable/disable via web interface settings
 
 **Common Startup Delays:**
 - `--startup-delay 0` - No delay, display immediately (if no updates)
@@ -94,6 +111,14 @@ Access settings via the **Settings** button in the web interface:
 #### **🖼️ Thumbnail Quality**
 - **Range:** 50-95 (JPEG quality)
 - **Default:** 85 (good balance of quality/size)
+
+#### **🔧 Manufacturer Timing Requirements**
+- **Enabled:** Enforces 180-second minimum between refreshes, queues rapid uploads
+- **Disabled (Default):** No timing restrictions, immediate display
+
+#### **😴 Sleep Mode**
+- **Enabled (Default):** Puts display to sleep between operations for power efficiency
+- **Disabled:** Display stays active between operations (faster but uses more power)
 
 ### 📁 **Settings Storage**
 Settings are saved to `~/watched_files/.settings.json` and persist across restarts.
@@ -236,6 +261,9 @@ python display_latest.py --startup-delay 5       # Set startup delay to 5 minute
 python display_latest.py --refresh-interval 12   # Set refresh interval to 12 hours
 
 # Combine multiple options
+python display_latest.py -d ~/welcome.jpg -f ~/my_files --clear-start --no-clear-exit --startup-delay 2 --refresh-interval 6
+
+# Combine multiple options
 python display_latest.py -d ~/welcome.jpg -f ~/my_files --clear-start --no-clear-exit
 ```
 
@@ -248,6 +276,9 @@ python display_latest.py -d ~/welcome.jpg -f ~/my_files --clear-start --no-clear
 | `--clear-start` | - | Clear screen on startup | False |
 | `--no-clear-exit` | - | Don't clear screen when exiting | False |
 | `--normal-orientation` | - | Display in normal orientation (not upside-down) | False |
+| `--disable-timing` | - | Disable automatic timing features (startup display and refresh) | False |
+| `--startup-delay` | - | Minutes to wait before displaying latest file on startup | 1 |
+| `--refresh-interval` | - | Hours between display refreshes to prevent ghosting | 24 |
 | `--help` | `-h` | Show help message and exit | - |
 
 ### Supported File Types
@@ -353,9 +384,56 @@ sudo systemctl daemon-reload
 sudo systemctl restart eink-display.service
 ```
 
-## 🧹 Clear Display Script
+## 🛠️ Management Scripts
 
-A simple standalone script to clear the e-ink display:
+The system includes several management scripts for easy control and monitoring:
+
+### **🔄 Restart Script**
+```bash
+# Clean restart without system reboot
+./restart_eink_system.sh
+
+# Check system status
+./restart_eink_system.sh status
+
+# View recent logs
+./restart_eink_system.sh logs
+
+# Clean up orphaned processes
+./restart_eink_system.sh cleanup
+```
+
+### **🎛️ Management Script**
+```bash
+# Start the system
+./manage_eink_system.sh start
+
+# Stop the system
+./manage_eink_system.sh stop
+
+# Restart the system
+./manage_eink_system.sh restart
+
+# Check system status
+./manage_eink_system.sh status
+
+# View recent logs
+./manage_eink_system.sh logs
+
+# Follow logs in real-time
+./manage_eink_system.sh follow
+
+# Clear the display
+./manage_eink_system.sh clear
+
+# Show network information
+./manage_eink_system.sh ip
+
+# Clean up orphaned processes
+./manage_eink_system.sh cleanup
+```
+
+### **🧹 Clear Display Script**
 
 ```bash
 # Clear the display immediately
@@ -856,6 +934,8 @@ RpiEinky/
 ├── run_eink_system.py             # Combined runner for both services
 ├── clear_display.py               # Simple script to clear the display
 ├── show_ip.py                     # Standalone IP address display script
+├── restart_eink_system.sh         # Clean restart script (no reboot needed)
+├── manage_eink_system.sh          # Comprehensive management script
 ├── eink_control.sh                # Smart control script (auto-restart)
 ├── eink_control_nginx.sh          # Nginx-compatible control script
 ├── activate_env.sh                # Foolproof venv activation script
@@ -1154,6 +1234,16 @@ sudo journalctl -u eink-display.service -f
 ./eink_control.sh                    # Default: access at :5000
 ./eink_control_nginx.sh              # Optional: nginx setup for /eink/ path
 
+# Management scripts (no reboot needed)
+./manage_eink_system.sh start        # Start the system
+./manage_eink_system.sh restart      # Restart the system
+./manage_eink_system.sh status       # Check status
+./manage_eink_system.sh logs         # View logs
+./manage_eink_system.sh follow       # Follow logs in real-time
+
+# Clean restart without system reboot
+./restart_eink_system.sh
+
 # Show device IP address on e-ink display  
 python display_latest.py --show-ip
 python show_ip.py
@@ -1170,8 +1260,13 @@ python display_latest.py --folder ~/kiosk_files --clear-start
 # Display in normal orientation, don't clear on exit
 python display_latest.py --normal-orientation --no-clear-exit
 
-# Full featured: custom folder, initial file, controlled clearing
-python display_latest.py -f ~/display_queue -d ~/status.txt --clear-start --no-clear-exit
+# Control timing features
+python display_latest.py --disable-timing        # Disable automatic timing
+python display_latest.py --startup-delay 5       # 5-minute startup delay
+python display_latest.py --refresh-interval 12   # 12-hour refresh interval
+
+# Full featured: custom folder, initial file, controlled clearing, timing
+python display_latest.py -f ~/display_queue -d ~/status.txt --clear-start --no-clear-exit --startup-delay 2 --refresh-interval 6
 
 # Just clear the display
 python clear_display.py
@@ -1250,11 +1345,19 @@ python display_latest.py \
 # Real-time logs (manual run)
 python display_latest.py
 
+# Management script logs
+./manage_eink_system.sh logs         # View recent logs
+./manage_eink_system.sh follow       # Follow logs in real-time
+
 # System service logs
 sudo journalctl -u eink-display.service -f
 
 # Service status
 sudo systemctl status eink-display.service
+
+# Check specific log files
+tail -f ~/RpiEinky/logs/display.log  # Display monitor logs
+tail -f ~/RpiEinky/logs/server.log   # Upload server logs
 ```
 
 ## 🌐 Raspberry Network Setup (Optional)

@@ -180,6 +180,23 @@
                         How often to refresh the display to prevent ghosting (default: 24 hours)
                     </p>
                 </div>
+                
+                <div class="setting-group">
+                    <label for="enable-manufacturer-timing">Enable Manufacturer Timing Requirements:</label>
+                    <input type="checkbox" id="enable-manufacturer-timing" class="setting-input">
+                    <p class="setting-description">
+                        Enforces 180-second minimum between refreshes. <strong>May affect rapid uploads</strong> - files will be queued and displayed after timing allows.
+                    </p>
+                </div>
+                
+                <div class="setting-group">
+                    <label for="enable-sleep-mode">Enable Sleep Mode:</label>
+                    <input type="checkbox" id="enable-sleep-mode" class="setting-input">
+                    <p class="setting-description">
+                        Puts display to sleep between operations for power efficiency and display health. 
+                        <strong>Recommended</strong> - adds ~0.5-1 second wake time per operation but prevents display damage.
+                    </p>
+                </div>
             </div>
             <div class="modal-footer">
                 <button class="btn secondary" id="settings-cancel">Cancel</button>

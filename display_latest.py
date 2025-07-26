@@ -97,7 +97,7 @@ def signal_handler_clear_exit(signum, frame):
 
 
 class EinkDisplayHandler(FileSystemEventHandler):
-    def __init__(self, watched_folder="./watched_files", clear_on_start=False, clear_on_exit=True, disable_timing=False, refresh_interval_hours=24, startup_delay_minutes=1):
+    def __init__(self, watched_folder="./watched_files", clear_on_start=False, clear_on_exit=True, disable_timing=False, refresh_interval_hours=24, startup_delay_minutes=1, enable_manufacturer_timing=False, enable_sleep_mode=True):
         self.watched_folder = Path(watched_folder)
         self.watched_folder.mkdir(exist_ok=True)
         self.clear_on_start = clear_on_start
@@ -138,6 +138,11 @@ class EinkDisplayHandler(FileSystemEventHandler):
         self.last_refresh_time = time.time()
         self.current_displayed_file = None
         
+        # E-ink display timing requirements (manufacturer specifications)
+        self.enable_manufacturer_timing = enable_manufacturer_timing
+        self.enable_sleep_mode = enable_sleep_mode
+        self.min_refresh_interval = 180 if enable_manufacturer_timing else 0  # Minimum 180 seconds between refreshes (if enabled)
+        
         # Set initial timing values from constructor parameters
         self.refresh_interval_hours = refresh_interval_hours
         self.startup_delay_minutes = startup_delay_minutes
@@ -158,6 +163,8 @@ class EinkDisplayHandler(FileSystemEventHandler):
         logger.info(f"Monitoring folder: {self.watched_folder.absolute()}")
         logger.info(f"E-ink display initialized - Size: {self.epd.width}x{self.epd.height}")
         logger.info(f"Auto-display uploads: {self.auto_display_uploads}")
+        logger.info(f"Manufacturer timing requirements: {'ENABLED' if self.enable_manufacturer_timing else 'DISABLED'}")
+        logger.info(f"Sleep mode: {'ENABLED' if self.enable_sleep_mode else 'DISABLED'}")
     
     def start_timing_threads(self):
         """Start background threads for timing-based features"""
@@ -274,6 +281,8 @@ class EinkDisplayHandler(FileSystemEventHandler):
                     self.startup_delay_minutes = settings.get('startup_delay_minutes', 1)
                     self.refresh_interval_hours = settings.get('refresh_interval_hours', 24)
                     self.enable_timing_features = settings.get('enable_timing_features', True)
+                    self.enable_manufacturer_timing = settings.get('enable_manufacturer_timing', False)
+                    self.enable_sleep_mode = settings.get('enable_sleep_mode', True)
                     
                     logger.info(f"Settings loaded from {settings_file} - Auto-display: {self.auto_display_uploads}, Crop mode: {self.image_crop_mode}")
                     logger.info(f"Timing settings - Enabled: {self.enable_timing_features}, Startup delay: {self.startup_delay_minutes}min, Refresh: {self.refresh_interval_hours}h")
@@ -284,6 +293,8 @@ class EinkDisplayHandler(FileSystemEventHandler):
                 self.startup_delay_minutes = 1
                 self.refresh_interval_hours = 24
                 self.enable_timing_features = True
+                self.enable_manufacturer_timing = False
+                self.enable_sleep_mode = True
                 logger.info(f"Settings file not found at {settings_file}, using defaults")
         except Exception as e:
             logger.error(f"Error loading settings: {e}")
@@ -293,6 +304,7 @@ class EinkDisplayHandler(FileSystemEventHandler):
             self.startup_delay_minutes = 1
             self.refresh_interval_hours = 24
             self.enable_timing_features = True
+            self.enable_manufacturer_timing = False
     
     def reload_settings(self):
         """Reload settings from file (useful when settings change)"""
@@ -347,13 +359,44 @@ class EinkDisplayHandler(FileSystemEventHandler):
             return False
     
     def display_buffer(self, image):
-        """Display image buffer with orientation support"""
+        """Display image buffer with always-on sleep mode and optional timing restrictions"""
         try:
+            # Check manufacturer timing requirements if enabled
+            if self.enable_manufacturer_timing:
+                current_time = time.time()
+                if hasattr(self, 'last_refresh_time') and (current_time - self.last_refresh_time) < self.min_refresh_interval:
+                    remaining_time = self.min_refresh_interval - (current_time - self.last_refresh_time)
+                    logger.warning(f"Display refresh too soon. Must wait {remaining_time:.1f} more seconds (manufacturer requirement: 180s minimum)")
+                    return False
+            
+            # Wake display from sleep mode if sleep mode is enabled
+            if self.enable_sleep_mode:
+                logger.info("Starting display operation - waking display from sleep...")
+                self.epd.init()
+                time.sleep(0.5)  # Brief delay after wake
+            else:
+                logger.info("Starting display operation (sleep mode disabled)...")
+            
             if self.display_upside_down:
                 # Simple 180-degree rotation using PIL
                 image = image.rotate(180)
             
+            logger.info("Calling epd.display()...")
             self.epd.display(self.epd.getbuffer(image))
+            
+            # Put display back to sleep mode if sleep mode is enabled
+            if self.enable_sleep_mode:
+                logger.info("Display completed - putting display to sleep...")
+                self.epd.sleep()
+            else:
+                logger.info("Display completed (sleep mode disabled)")
+            
+            # Update last refresh time if manufacturer timing is enabled
+            if self.enable_manufacturer_timing:
+                self.last_refresh_time = time.time()
+            
+            logger.info("Display operation completed successfully")
+            return True
             
         except Exception as e:
             logger.error(f"Display buffer error: {e}")
@@ -364,6 +407,10 @@ class EinkDisplayHandler(FileSystemEventHandler):
                 if self.display_upside_down:
                     image = image.rotate(180)
                 self.epd.display(self.epd.getbuffer(image))
+                if self.enable_sleep_mode:
+                    self.epd.sleep()  # Put to sleep after successful retry
+                return True
+            return False
     
     def reinitialize_display(self):
         """Reinitialize the e-ink display"""
@@ -401,9 +448,19 @@ class EinkDisplayHandler(FileSystemEventHandler):
         logger.info(f"Auto-display setting: {self.auto_display_uploads}")
         if self.auto_display_uploads:
             try:
-                self.display_file(file_path)
-                self.current_displayed_file = file_path  # Track current displayed file
-                logger.info(f"Auto-displayed file: {file_path.name}")
+                success = self.display_file(file_path)
+                if success:
+                    self.current_displayed_file = file_path  # Track current displayed file
+                    logger.info(f"Auto-displayed file: {file_path.name}")
+                elif self.enable_manufacturer_timing:
+                    logger.warning(f"Display operation failed for {file_path.name} - likely due to timing restrictions")
+                    # Queue for retry after minimum interval
+                    retry_time = self.min_refresh_interval - (time.time() - self.last_refresh_time)
+                    if retry_time > 0:
+                        logger.info(f"Will retry displaying {file_path.name} in {retry_time:.1f} seconds")
+                        threading.Timer(retry_time, self.retry_display_file, args=[file_path]).start()
+                else:
+                    logger.warning(f"Display operation failed for {file_path.name}")
             except Exception as e:
                 logger.error(f"Error auto-displaying file {file_path.name}: {e}")
                 self.display_error(file_path.name, str(e))
@@ -414,14 +471,31 @@ class EinkDisplayHandler(FileSystemEventHandler):
         """Convert and display file on e-ink display"""
         file_ext = file_path.suffix.lower()
         
-        if file_ext in ['.jpg', '.jpeg', '.png', '.bmp', '.gif']:
-            self.display_image(file_path)
-        elif file_ext in ['.txt', '.md', '.py', '.js', '.html', '.css']:
-            self.display_text_file(file_path)
-        elif file_ext == '.pdf':
-            self.display_pdf(file_path)
-        else:
-            self.display_file_info(file_path)
+        try:
+            if file_ext in ['.jpg', '.jpeg', '.png', '.bmp', '.gif']:
+                return self.display_image(file_path)
+            elif file_ext in ['.txt', '.md', '.py', '.js', '.html', '.css']:
+                return self.display_text_file(file_path)
+            elif file_ext == '.pdf':
+                return self.display_pdf(file_path)
+            else:
+                return self.display_file_info(file_path)
+        except Exception as e:
+            logger.error(f"Error in display_file for {file_path.name}: {e}")
+            return False
+    
+    def retry_display_file(self, file_path):
+        """Retry displaying a file after timing restrictions are met"""
+        logger.info(f"Retrying display of {file_path.name}")
+        try:
+            success = self.display_file(file_path)
+            if success:
+                self.current_displayed_file = file_path
+                logger.info(f"Successfully displayed file on retry: {file_path.name}")
+            else:
+                logger.warning(f"Retry failed for {file_path.name}")
+        except Exception as e:
+            logger.error(f"Error in retry_display_file for {file_path.name}: {e}")
     
     def display_image(self, file_path):
         """Display image file on e-ink"""
@@ -453,12 +527,15 @@ class EinkDisplayHandler(FileSystemEventHandler):
                 y_offset = (self.epd.width - processed_image.height) // 2
                 display_image.paste(processed_image, (x_offset, y_offset))
             
-            self.display_buffer(display_image)
-            logger.info(f"Displayed image: {file_path.name} (original: {original_size}, final: {display_image.size})")
+            success = self.display_buffer(display_image)
+            if success:
+                logger.info(f"Displayed image: {file_path.name} (original: {original_size}, final: {display_image.size})")
+            return success
             
         except Exception as e:
             logger.error(f"Error displaying image {file_path.name}: {e}")
             self.display_error(file_path.name, str(e))
+            return False
     
     def display_text_file(self, file_path):
         """Display text file content on e-ink"""
@@ -512,12 +589,15 @@ class EinkDisplayHandler(FileSystemEventHandler):
                     draw.text((5, y_pos), line, font=self.font_small, fill=self.epd.BLACK)
                     y_pos += line_height
             
-            self.display_buffer(display_image)
-            logger.info(f"Displayed text file: {file_path.name}")
+            success = self.display_buffer(display_image)
+            if success:
+                logger.info(f"Displayed text file: {file_path.name}")
+            return success
             
         except Exception as e:
             logger.error(f"Error displaying text file {file_path.name}: {e}")
             self.display_error(file_path.name, str(e))
+            return False
     
     def display_pdf(self, file_path):
         """Display PDF file (first page) on e-ink"""
@@ -546,18 +626,20 @@ class EinkDisplayHandler(FileSystemEventHandler):
                     y_offset = (self.epd.width - pdf_image.height) // 2
                     display_image.paste(pdf_image, (x_offset, y_offset))
                     
-                    self.display_buffer(display_image)
-                    logger.info(f"Displayed PDF: {file_path.name}")
-                    return
+                    success = self.display_buffer(display_image)
+                    if success:
+                        logger.info(f"Displayed PDF: {file_path.name}")
+                    return success
             except ImportError:
                 pass
             
             # Fallback: show PDF info
-            self.display_file_info(file_path)
+            return self.display_file_info(file_path)
             
         except Exception as e:
             logger.error(f"Error displaying PDF {file_path.name}: {e}")
             self.display_error(file_path.name, str(e))
+            return False
     
     def display_file_info(self, file_path):
         """Display file information for unsupported formats"""
@@ -606,12 +688,15 @@ class EinkDisplayHandler(FileSystemEventHandler):
                 
                 y_pos += 5  # Extra spacing
             
-            self.display_buffer(display_image)
-            logger.info(f"Displayed file info: {file_path.name}")
+            success = self.display_buffer(display_image)
+            if success:
+                logger.info(f"Displayed file info: {file_path.name}")
+            return success
             
         except Exception as e:
             logger.error(f"Error displaying file info {file_path.name}: {e}")
             self.display_error(file_path.name, str(e))
+            return False
     
     def display_error(self, filename, error_msg):
         """Display error message on e-ink"""
@@ -905,7 +990,9 @@ Timing Features:
                                clear_on_exit=CLEAR_ON_EXIT,
                                disable_timing=DISABLE_TIMING,
                                refresh_interval_hours=REFRESH_INTERVAL_HOURS,
-                               startup_delay_minutes=STARTUP_DELAY_MINUTES)
+                               startup_delay_minutes=STARTUP_DELAY_MINUTES,
+                               enable_manufacturer_timing=False,  # Default to disabled
+                               enable_sleep_mode=True)  # Default to enabled
     handler.display_upside_down = DISPLAY_UPSIDE_DOWN
     
     # Set up file system observer
