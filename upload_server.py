@@ -14,7 +14,19 @@ from PIL import Image
 import logging
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+import os
+# Use the user's home directory for log files
+log_dir = os.path.expanduser('~/logs')
+os.makedirs(log_dir, exist_ok=True)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(os.path.join(log_dir, 'eink_upload.log')),  # Log to file
+        logging.StreamHandler()  # Also log to console
+    ]
+)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
@@ -45,7 +57,8 @@ DEFAULT_SETTINGS = {
     'disable_startup_timer': False,    # Disable automatic startup display timer
     'disable_refresh_timer': False,    # Disable automatic refresh timer
     'enable_manufacturer_timing': False,  # Enable manufacturer timing requirements (180s minimum)
-    'enable_sleep_mode': True  # Enable sleep mode between operations (power efficiency)
+    'enable_sleep_mode': True,  # Enable sleep mode between operations (power efficiency)
+    'orientation': 'landscape'  # Display orientation: 'landscape', 'portrait', 'landscape_flipped', 'portrait_flipped'
 }
 
 # Image extensions for thumbnail generation
@@ -145,6 +158,30 @@ def generate_thumbnail(filepath, filename):
     except Exception as e:
         logger.error(f"Thumbnail generation failed for {filename}: {e}")
         return None
+
+def trigger_settings_reload_and_redisplay():
+    """Trigger a settings reload and re-display of current content when settings change"""
+    try:
+        # Brief delay to ensure settings file is written
+        import time
+        time.sleep(0.5)
+        
+        # Find the most recent file to re-display with new settings
+        files = [f for f in os.listdir(UPLOAD_FOLDER) if os.path.isfile(os.path.join(UPLOAD_FOLDER, f)) and not f.startswith('.')]
+        if not files:
+            logger.info("No files found for re-display after settings change")
+            return False
+        
+        # Get the most recent file
+        files_with_time = [(f, os.path.getmtime(os.path.join(UPLOAD_FOLDER, f))) for f in files]
+        latest_file = max(files_with_time, key=lambda x: x[1])[0]
+        
+        logger.info(f"Re-displaying latest file '{latest_file}' with new settings")
+        return display_file_on_eink(latest_file)
+        
+    except Exception as e:
+        logger.error(f"Error in trigger_settings_reload_and_redisplay: {e}")
+        return False
 
 def display_file_on_eink(filename):
     """Display a specific file on the e-ink display"""
@@ -339,6 +376,18 @@ def update_settings():
         # Save updated settings
         if save_settings(current_settings):
             logger.info(f"Settings updated: {list(data.keys())}")
+            
+            # If orientation was changed, trigger a re-display of current content asynchronously
+            if 'orientation' in data:
+                try:
+                    import threading
+                    # Run re-display in background thread so web interface doesn't block
+                    thread = threading.Thread(target=trigger_settings_reload_and_redisplay, daemon=True)
+                    thread.start()
+                    logger.info("Started background re-display due to orientation change")
+                except Exception as e:
+                    logger.warning(f"Failed to start background re-display after orientation change: {e}")
+            
             return jsonify({
                 'message': 'Settings updated successfully',
                 'settings': current_settings

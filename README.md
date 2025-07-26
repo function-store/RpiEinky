@@ -285,7 +285,7 @@ python display_latest.py -d ~/welcome.jpg -f ~/my_files --clear-start --no-clear
 | `--folder` | `-f` | Folder to monitor for new files | `~/watched_files` |
 | `--clear-start` | - | Clear screen on startup | False |
 | `--no-clear-exit` | - | Don't clear screen when exiting | False |
-| `--normal-orientation` | - | Display in normal orientation (not upside-down) | False |
+| `--orientation` | - | Display orientation (landscape, landscape_upside_down, portrait, portrait_upside_down) | landscape |
 | `--disable-startup-timer` | - | Disable automatic startup display timer | False |
 | `--disable-refresh-timer` | - | Disable automatic refresh timer | False |
 | `--startup-delay` | - | Minutes to wait before displaying latest file on startup | 1 |
@@ -889,20 +889,42 @@ parser.add_argument('--folder', '-f', default='~/your_custom_folder', ...)
 
 ### Display Orientation
 
-Use the `--normal-orientation` command line argument:
+The system supports 4 different orientation modes for flexible mounting options:
+
+#### **🔄 Orientation Options:**
+- **`landscape`** - Normal horizontal orientation (default)
+- **`landscape_upside_down`** - Horizontal upside-down
+- **`portrait`** - Vertical orientation (rotated 90° clockwise)
+- **`portrait_upside_down`** - Vertical upside-down (rotated 270° clockwise)
+
+#### **💻 Command Line Usage:**
 ```bash
-# Default: upside-down orientation
+# Default: landscape (normal)
 python display_latest.py
 
-# Normal orientation (not upside-down)
-python display_latest.py --normal-orientation
+# Normal landscape
+python display_latest.py --orientation landscape
+
+# Portrait mode (vertical mounting)
+python display_latest.py --orientation portrait
+
+# Portrait upside-down
+python display_latest.py --orientation portrait_upside_down
 ```
 
-**Benefits of the orientation system:**
-- ✅ **Efficient** - Uses simple PIL rotation instead of complex buffer manipulation
-- ✅ **Consistent** - All content (text, images, errors) automatically oriented correctly
-- ✅ **Reliable** - Simple rotation that works across all content types
-- ✅ **Command-line controlled** - Easy to change without editing code
+#### **🌐 Web Interface:**
+The orientation can also be set via the web interface in the **Display Settings** section.
+
+#### **🎯 Use Cases:**
+- **Landscape modes**: Traditional horizontal mounting
+- **Portrait modes**: Vertical mounting (e.g., wall-mounted displays, narrow spaces)
+- **Upside-down variants**: For different mounting orientations
+
+#### **✅ Benefits:**
+- **Flexible mounting**: Mount the display in any orientation
+- **Efficient rotation**: Uses PIL rotation for smooth image transformation
+- **Consistent behavior**: All content types (images, text, errors) properly oriented
+- **Easy configuration**: Change via command line or web interface
 
 ### Screen Clearing Behavior
 
@@ -1270,8 +1292,10 @@ python display_latest.py --display-file ~/Pictures/welcome.jpg
 # Monitor a specific folder with clean start
 python display_latest.py --folder ~/kiosk_files --clear-start
 
-# Display in normal orientation, don't clear on exit
-python display_latest.py --normal-orientation --no-clear-exit
+# Display in different orientations
+python display_latest.py --orientation landscape
+python display_latest.py --orientation portrait
+python display_latest.py --orientation portrait_upside_down
 
 # Control timing features
 python display_latest.py --disable-startup-timer  # Disable startup timer only
@@ -1284,7 +1308,7 @@ python display_latest.py --enable-manufacturer-timing  # Enable 180s minimum ref
 python display_latest.py --disable-sleep-mode         # Disable sleep mode (faster)
 
 # Full featured: custom folder, initial file, controlled clearing, timing
-python display_latest.py -f ~/display_queue -d ~/status.txt --clear-start --no-clear-exit --startup-delay 2 --refresh-interval 6 --disable-startup-timer --enable-manufacturer-timing
+python display_latest.py -f ~/display_queue -d ~/status.txt --clear-start --no-clear-exit --orientation portrait --startup-delay 2 --refresh-interval 6 --disable-startup-timer --enable-manufacturer-timing
 
 # Just clear the display
 python clear_display.py
@@ -1295,7 +1319,7 @@ python display_latest.py \
   --display-file ~/welcome.jpg \
   --clear-start \
   --no-clear-exit \
-  --normal-orientation \
+  --orientation portrait \
   --disable-startup-timer \
   --refresh-interval 12 \
   --enable-manufacturer-timing \

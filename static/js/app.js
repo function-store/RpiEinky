@@ -530,6 +530,7 @@ class EinkDisplayManager {
             const response = await fetch('/settings');
             if (response.ok) {
                 const settings = await response.json();
+                this.currentSettings = settings; // Store for comparison
                 this.populateSettingsForm(settings);
             } else {
                 throw new Error('Failed to load settings');
@@ -568,10 +569,15 @@ class EinkDisplayManager {
         document.getElementById('refresh-interval').value = settings.refresh_interval_hours || 24;
         document.getElementById('enable-manufacturer-timing').checked = settings.enable_manufacturer_timing === true;
         document.getElementById('enable-sleep-mode').checked = settings.enable_sleep_mode !== false;
+        document.getElementById('orientation').value = settings.orientation || 'landscape';
     }
     
     async saveSettings() {
         try {
+            const currentOrientation = this.currentSettings ? this.currentSettings.orientation : 'landscape';
+            const newOrientation = document.getElementById('orientation').value;
+            const orientationChanged = currentOrientation !== newOrientation;
+            
             const settings = {
                 image_crop_mode: document.getElementById('image-crop-mode').value,
                 auto_display_upload: document.getElementById('auto-display-upload').checked,
@@ -581,7 +587,8 @@ class EinkDisplayManager {
                 startup_delay_minutes: parseInt(document.getElementById('startup-delay').value),
                 refresh_interval_hours: parseInt(document.getElementById('refresh-interval').value),
                 enable_manufacturer_timing: document.getElementById('enable-manufacturer-timing').checked,
-                enable_sleep_mode: document.getElementById('enable-sleep-mode').checked
+                enable_sleep_mode: document.getElementById('enable-sleep-mode').checked,
+                orientation: newOrientation
             };
             
             const response = await fetch('/settings', {
@@ -593,7 +600,14 @@ class EinkDisplayManager {
             });
             
             if (response.ok) {
-                this.showToast('Settings saved successfully', 'success');
+                const result = await response.json();
+                this.currentSettings = result.settings; // Store current settings for comparison
+                
+                if (orientationChanged) {
+                    this.showToast('Settings saved! Display orientation is being updated...', 'success');
+                } else {
+                    this.showToast('Settings saved successfully', 'success');
+                }
                 this.closeSettings();
             } else {
                 const error = await response.json();

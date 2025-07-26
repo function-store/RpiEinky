@@ -83,6 +83,8 @@ def main():
     )
     parser.add_argument('--normal-orientation', action='store_true',
                        help='Display in normal orientation (not upside-down)')
+    parser.add_argument('--orientation', choices=['landscape', 'landscape_flipped', 'portrait', 'portrait_flipped'],
+                       help='Display orientation (overrides normal-orientation)')
     parser.add_argument('--no-clear', action='store_true',
                        help='Do not clear display before showing IP')
     
@@ -150,8 +152,22 @@ def main():
         draw.text((5, y_pos), "other devices on your network", font=font_small, fill=epd.BLACK)
         
         # Apply orientation
-        if not args.normal_orientation:
-            # Default is upside-down (180 degree rotation)
+        if args.orientation:
+            # Use the new orientation system
+            if args.orientation == 'landscape':
+                # No rotation needed
+                pass
+            elif args.orientation == 'landscape_flipped':
+                # Rotate 180 degrees
+                display_image = display_image.rotate(180)
+            elif args.orientation == 'portrait':
+                # Rotate 90 degrees clockwise
+                display_image = display_image.rotate(90, expand=True)
+            elif args.orientation == 'portrait_flipped':
+                # Rotate 270 degrees clockwise (or 90 degrees counter-clockwise)
+                display_image = display_image.rotate(270, expand=True)
+        elif not args.normal_orientation:
+            # Legacy behavior: Default is upside-down (180 degree rotation)
             display_image = display_image.rotate(180)
         
         # Display the image

@@ -387,7 +387,7 @@ class EinkDisplayHandler(FileSystemEventHandler):
             if self.display_upside_down:
                 # Simple 180-degree rotation using PIL
                 image = image.rotate(180)
-            
+
             logger.info("Calling epd.display()...")
             self.epd.display(self.epd.getbuffer(image))
             
@@ -510,7 +510,8 @@ class EinkDisplayHandler(FileSystemEventHandler):
             # Open and process image
             image = Image.open(file_path)
             original_size = image.size
-            
+
+                
             # Convert to RGB if necessary, using white background for transparency
             if image.mode != 'RGB':
                 if image.mode == 'RGBA':
@@ -521,6 +522,11 @@ class EinkDisplayHandler(FileSystemEventHandler):
                 else:
                     image = image.convert('RGB')
             
+
+            if 'portrait' in self.orientation:
+                degree = 90 if 'upside_down' in self.orientation else 270
+                image = image.rotate(degree, expand = self.image_crop_mode == 'center_crop')
+
             # Resize and crop to fit display
             processed_image = self.resize_image_to_fit(image)
             
