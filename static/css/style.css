@@ -243,6 +243,17 @@ body {
     margin-bottom: 24px;
 }
 
+/* Currently Displayed Image Section */
+.currently-displayed-section {
+    margin-bottom: 24px;
+    background: var(--card-bg);
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: var(--shadow);
+    border: 1px solid var(--border-color);
+    border-left: 4px solid #10b981; /* Green accent for "currently displayed" */
+}
+
 /* Selected Image Section */
 .selected-image-section {
     margin-bottom: 24px;

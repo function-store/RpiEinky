@@ -143,6 +143,10 @@ class EinkDisplayHandler(FileSystemEventHandler):
         self.last_refresh_time = time.time()
         self.current_displayed_file = None
         
+        # Startup timer control
+        self.startup_timer_active = True
+        self.manual_selection_during_startup = False
+        
         # E-ink display timing requirements (manufacturer specifications)
         self.enable_manufacturer_timing = enable_manufacturer_timing
         self.enable_sleep_mode = enable_sleep_mode
@@ -197,8 +201,14 @@ class EinkDisplayHandler(FileSystemEventHandler):
             startup_delay_seconds = self.startup_delay_minutes * 60
             time.sleep(startup_delay_seconds)
             
+            # Check if manual selection was made during startup
+            if self.manual_selection_during_startup:
+                logger.info("Manual selection made during startup - skipping automatic priority file display")
+                self.startup_timer_active = False
+                return
+            
             # Check if we should display the priority file
-            if not exit_requested:
+            if not exit_requested and self.startup_timer_active:
                 logger.info(f"{self.startup_delay_minutes}-minute startup timer triggered - checking for priority file")
                 self.display_latest_file_if_no_updates()
                 
@@ -556,17 +566,28 @@ class EinkDisplayHandler(FileSystemEventHandler):
                         logger.info(f"Executing display command for: {filename}")
                         self.display_file(target_file)
                         self.current_displayed_file = target_file
+                        
+                        # Mark that manual selection was made during startup
+                        if self.startup_timer_active:
+                            logger.info("Manual selection detected during startup - will cancel automatic priority display")
+                            self.manual_selection_during_startup = True
                     else:
                         logger.error(f"Command file not found: {filename}")
                 elif action == 'refresh_display':
                     # Refresh the display with current priority file
                     logger.info("Executing refresh display command")
+                    
+                    
                     self.reload_settings()  # Reload settings first
                     priority_file = self.get_priority_display_file()
                     if priority_file:
                         logger.info(f"Refreshing display with priority file: {priority_file.name}")
                         self.display_file(priority_file)
                         self.current_displayed_file = priority_file
+                        # Mark that settings were changed during startup
+                        if self.startup_timer_active:
+                            logger.info("Settings change detected during startup - will cancel automatic priority display")
+                            self.manual_selection_during_startup = True
                     else:
                         logger.info("No priority file found for refresh")
                 
@@ -600,6 +621,11 @@ class EinkDisplayHandler(FileSystemEventHandler):
             try:
                 # Set this as the current displayed file first
                 self.current_displayed_file = file_path
+                
+                # Mark that a new file was uploaded during startup
+                if self.startup_timer_active:
+                    logger.info("New file upload detected during startup - will cancel automatic priority display")
+                    self.manual_selection_during_startup = True
                 
                 success = self.display_file(file_path)
                 if success:

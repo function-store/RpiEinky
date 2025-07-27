@@ -486,6 +486,44 @@ def cleanup_old_files():
         logger.error(f"Cleanup error: {e}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/displayed_file', methods=['GET'])
+def get_displayed_file():
+    """Get information about the currently displayed file"""
+    try:
+        # Read settings to get the selected image (priority system)
+        settings = load_settings()
+        selected_image = settings.get('selected_image')
+        
+        if selected_image:
+            file_path = Path(UPLOAD_FOLDER) / selected_image
+            if file_path.exists():
+                return jsonify({
+                    'filename': selected_image,
+                    'type': 'selected_image',
+                    'exists': True
+                })
+        
+        # Fallback to latest file
+        files = [f for f in os.listdir(UPLOAD_FOLDER) if os.path.isfile(os.path.join(UPLOAD_FOLDER, f)) and not f.startswith('.')]
+        if files:
+            files_with_time = [(f, os.path.getmtime(os.path.join(UPLOAD_FOLDER, f))) for f in files]
+            latest_file = max(files_with_time, key=lambda x: x[1])[0]
+            return jsonify({
+                'filename': latest_file,
+                'type': 'latest_file',
+                'exists': True
+            })
+        
+        return jsonify({
+            'filename': None,
+            'type': 'none',
+            'exists': False
+        })
+            
+    except Exception as e:
+        logger.error(f"Error getting displayed file info: {e}")
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/clear_screen', methods=['POST'])
 def clear_screen():
     """Clear the e-ink display screen (without removing files)"""

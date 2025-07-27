@@ -16,6 +16,9 @@ class EinkDisplayManager {
         
         // Check status periodically
         setInterval(() => this.checkServerStatus(), 30000);
+        
+        // Update currently displayed file periodically
+        setInterval(() => this.loadCurrentlyDisplayedFile(), 5000); // Every 5 seconds
     }
     
     bindEvents() {
@@ -186,6 +189,9 @@ class EinkDisplayManager {
             console.error('Failed to load currently displayed file:', error);
             this.currentlyDisplayedFile = null;
         }
+        
+        // Update the display after loading
+        this.updateCurrentlyDisplayedImage();
     }
     
     renderFiles() {
@@ -229,9 +235,9 @@ class EinkDisplayManager {
                         <span>${fileDate}</span>
                     </div>
                     <div class="file-actions">
-                        <button class="file-btn display" data-action="display" ${isCurrentlyDisplayed ? 'disabled' : ''}>
-                            <i class="fas fa-eye"></i> ${isCurrentlyDisplayed ? 'Displayed' : 'Display'}
-                        </button>
+                                        <button class="file-btn display" data-action="display">
+                    <i class="fas fa-eye"></i> ${isCurrentlyDisplayed ? 'Refresh Display' : 'Display'}
+                </button>
                         <button class="file-btn delete" data-action="delete">
                             <i class="fas fa-trash"></i> Delete
                         </button>
@@ -326,31 +332,23 @@ class EinkDisplayManager {
     
     async displayFile(filename) {
         try {
-            const response = await fetch('/display_file', {
+            const response = await fetch(`/display_file`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({ filename })
             });
-            
-            const data = await response.json();
-            
+
             if (response.ok) {
-                this.showToast(data.message || `Displaying: ${filename}`, 'success');
+                this.showToast(`Displaying ${filename}...`, 'success');
                 
-                // Update selected image display if this file was set as default
-                if (data.selected_image) {
-                    this.updateSelectedImageDisplay(data.selected_image);
-                }
+                // Immediately update displayed file
+                await this.loadCurrentlyDisplayedFile(); // <-- Add this
                 
-                // Refresh the currently displayed file info and re-render
-                await this.loadCurrentlyDisplayedFile();
-                this.renderFiles();
-            } else {
-                throw new Error(data.error || 'Failed to display file');
+                // Keep existing refresh
+                await this.loadFiles();
             }
         } catch (error) {
-            console.error('Display failed:', error);
-            this.showToast(`Failed to display file: ${error.message}`, 'error');
+            this.showToast(`Failed to display file: ${error}`, 'error');
         }
     }
     
@@ -717,6 +715,30 @@ class EinkDisplayManager {
                     <div class="selected-image-details">
                         <h4>${selectedImage}</h4>
                         <p>This image will be displayed by default when no recent uploads are available.</p>
+                    </div>
+                </div>
+            `;
+        } else {
+            section.style.display = 'none';
+        }
+    }
+    
+    updateCurrentlyDisplayedImage() {
+        const section = document.getElementById('currently-displayed-section');
+        const info = document.getElementById('currently-displayed-info');
+        
+        if (this.currentlyDisplayedFile) {
+            section.style.display = 'block';
+            info.innerHTML = `
+                <div class="selected-image-card">
+                    <div class="selected-image-preview">
+                        <img src="/thumbnails/${this.currentlyDisplayedFile.replace(/\.[^/.]+$/, '')}_thumb.jpg" 
+                             alt="${this.currentlyDisplayedFile}" 
+                             onerror="this.style.display='none'">
+                    </div>
+                    <div class="selected-image-details">
+                        <h4>${this.currentlyDisplayedFile}</h4>
+                        <p>This image is currently being displayed on the e-ink screen.</p>
                     </div>
                 </div>
             `;
