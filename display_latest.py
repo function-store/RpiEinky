@@ -22,7 +22,6 @@ libdir = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__)
 if os.path.exists(libdir):
     sys.path.append(libdir)
 
-# Import the unified EPD adapter
 from unified_epd_adapter import UnifiedEPD, EPDConfig
 
 # Configure logging
@@ -109,13 +108,11 @@ class EinkDisplayHandler(FileSystemEventHandler):
         self.clear_on_start = clear_on_start
         self.clear_on_exit = clear_on_exit
         
-        # Initialize e-paper display using unified adapter
+        # Initialize e-paper display
         if display_type is None:
-            display_type = EPDConfig.load_display_config()
-        
+            display_type = EPDConfig.load_display_config().get('display_type', 'epd2in15g')
         logger.info(f"Initializing display type: {display_type}")
         self.epd = UnifiedEPD.create_display(display_type)
-        self.epd.init()
         
         # Clear screen on start if requested
         if self.clear_on_start:
@@ -1135,6 +1132,8 @@ Examples:
   %(prog)s --orientation portrait             # Display in portrait orientation
   %(prog)s --orientation portrait_flipped     # Display in flipped portrait orientation
   %(prog)s --disable-timing                   # Disable automatic timing features
+  %(prog)s --display-type epd7in3e            # Use 7.3" color display
+  %(prog)s --display-type epd13in3E           # Use 13.3" color display
 
 Orientation Options:
   - landscape: Normal horizontal orientation (default)
@@ -1152,6 +1151,8 @@ Timing Features:
                        help='Folder to monitor for files (default: ~/watched_files)')
     parser.add_argument('--display-file', '-d', 
                        help='Display this file on startup and wait for new files')
+    parser.add_argument('--display-type', choices=['epd2in15g', 'epd7in3e', 'epd13in3E'],
+                       help='E-ink display type (default: from config file or epd2in15g)')
     parser.add_argument('--latest-file', '-l', action='store_true',
                        help='Display the latest file in watched folder on startup')
     parser.add_argument('--show-ip', action='store_true',
@@ -1174,21 +1175,15 @@ Timing Features:
                        help='Enable manufacturer timing requirements (180s minimum refresh interval)')
     parser.add_argument('--disable-sleep-mode', action='store_true',
                        help='Disable sleep mode between operations (faster but uses more power)')
-    parser.add_argument('--display-type', choices=['epd2in15g', 'epd13in3E'],
-                       help='Specify display type (default: loaded from config file)')
     
     args = parser.parse_args()
     
     # Handle IP display option (show IP and exit)
     if args.show_ip:
         try:
-            # Load display type from config
-            display_type = EPDConfig.load_display_config()
+            # Get display type for IP display
+            display_type = args.display_type or EPDConfig.load_display_config().get('display_type', 'epd2in15g')
             logger.info(f"Using display type for IP display: {display_type}")
-            
-            # Initialize display just for IP display
-            epd = UnifiedEPD.create_display(display_type)
-            epd.init()
             
             # Create temporary handler just to display IP
             temp_handler = EinkDisplayHandler(clear_on_start=False, clear_on_exit=False, display_type=display_type)
@@ -1196,7 +1191,7 @@ Timing Features:
             temp_handler.display_ip_address()
             
             # Clean up
-            epd.sleep()
+            temp_handler.epd.sleep()
             logger.info("IP address displayed. Exiting.")
             return
         except Exception as e:

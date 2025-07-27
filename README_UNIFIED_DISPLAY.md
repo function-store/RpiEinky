@@ -4,8 +4,9 @@ This system provides a unified interface for different e-paper display types, al
 
 ## Supported Displays
 
-- **epd2in15g**: 2.15" Grayscale Display (160x296, 4-color grayscale)
-- **epd13in3E**: 13.3" Color Display (1200x1600, 7-color)
+- **epd2in15g**: 2.15" Grayscale Display (160×296, 47,360 pixels, 4-color grayscale)
+- **epd13in3E**: 13.3" Color Display (1200×1600, 1,920,000 pixels, 7-color)
+- **epd7in3e**: 7.3" Color Display (800×480, 384,000 pixels, 7-color)
 
 ## Quick Start
 
@@ -44,6 +45,9 @@ from unified_epd_adapter import UnifiedEPD
 # Create specific display type
 epd = UnifiedEPD.create_display("epd13in3E")
 
+# Or for 7.3" display
+epd = UnifiedEPD.create_display("epd7in3e")
+
 # Use the display
 epd.init()
 epd.display(image)
@@ -73,6 +77,7 @@ The `display_latest.py` script has been updated to use the unified display syste
 ```bash
 # Use specific display type
 python display_latest.py --display-type epd13in3E
+python display_latest.py --display-type epd7in3e
 
 # Use display type from config file (default)
 python display_latest.py
@@ -112,7 +117,8 @@ The system uses the Adapter pattern to provide a unified interface:
 ```
 EPDAdapter (Abstract Base Class)
 ├── EPD2in15gAdapter (2.15" display)
-└── EPD13in3EAdapter (13.3" display)
+├── EPD13in3EAdapter (13.3" display)
+└── EPD7in3eAdapter (7.3" display)
 ```
 
 ### Factory Pattern
@@ -133,19 +139,41 @@ The `EPDConfig` class handles loading/saving display preferences:
 display_type = EPDConfig.load_display_config()
 ```
 
+### Utility Methods
+
+The `UnifiedEPD` class provides utility methods for working with display information:
+
+```python
+# Get resolution as (width, height) tuple
+resolution = UnifiedEPD.get_display_resolution("epd2in15g")  # (160, 296)
+
+# Get total pixel count
+pixel_count = UnifiedEPD.get_display_pixel_count("epd13in3E")  # 1920000
+
+# Get display dimensions (alias for get_display_resolution)
+dimensions = UnifiedEPD.get_display_dimensions("epd7in3e")  # (800, 480)
+
+# Get full display information
+info = UnifiedEPD.get_display_info("epd2in15g")
+width, height = info['resolution']  # (160, 296)
+```
+
 ## Key Differences Handled
 
 ### Method Naming
 - `epd2in15g`: `init()`, `reset()`, `send_command()`
 - `epd13in3E`: `Init()`, `Reset()`, `SendCommand()`
+- `epd7in3e`: `init()`, `reset()`, `send_command()`
 
 ### Color Definitions
 - `epd2in15g`: 4-color grayscale (WHITE, BLACK, RED, YELLOW)
 - `epd13in3E`: 7-color (WHITE, BLACK, RED, YELLOW, BLUE, GREEN, etc.)
+- `epd7in3e`: 7-color (WHITE, BLACK, RED, YELLOW, BLUE, GREEN, etc.)
 
 ### Display Resolution
-- `epd2in15g`: 160x296
-- `epd13in3E`: 1200x1600
+- `epd2in15g`: (160, 296) - 47,360 pixels
+- `epd13in3E`: (1200, 1600) - 1,920,000 pixels
+- `epd7in3e`: (800, 480) - 384,000 pixels
 
 ### Buffer Handling
 - Different `getbuffer()` implementations for each display type

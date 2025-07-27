@@ -146,6 +146,7 @@ The system supports multiple e-paper display models through the unified display 
 #### **Currently Supported:**
 - **Waveshare 2.15" e-paper display (4-color grayscale)** - `epd2in15g`
 - **Waveshare 13.3" e-paper display (7-color)** - `epd13in3E`
+- **Waveshare 7.3" e-paper display (7-color)** - `epd7in3e`
 
 #### **Display Configuration:**
 The display type is automatically detected from the configuration file `~/watched_files/.epd_config.json`:
@@ -379,7 +380,7 @@ python display_latest.py -d ~/welcome.jpg -f ~/my_files --clear-start --no-clear
 | `--refresh-interval` | - | Hours between display refreshes to prevent ghosting | 24 |
 | `--enable-manufacturer-timing` | - | Enable manufacturer timing requirements (180s minimum) | False |
 | `--disable-sleep-mode` | - | Disable sleep mode between operations (faster but uses more power) | False |
-| `--display-type` | - | Specify display type (epd2in15g, epd13in3E) | Loaded from config file |
+| `--display-type` | - | Specify display type (epd2in15g, epd13in3E, epd7in3e) | Loaded from config file |
 | `--help` | `-h` | Show help message and exit | - |
 
 ### Supported File Types
@@ -1405,6 +1406,7 @@ python display_latest.py
 
 # Use specific display type (overrides config file)
 python display_latest.py --display-type epd13in3E
+python display_latest.py --display-type epd7in3e
 
 # Show a welcome image immediately, then monitor for new files (also sets it as selected image)
 python display_latest.py --display-file ~/Pictures/welcome.jpg

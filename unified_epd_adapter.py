@@ -9,6 +9,7 @@ allowing the same code to work with various Waveshare displays.
 Supported displays:
 - epd2in15g (2.15" grayscale)
 - epd13in3E (13.3" color)
+- epd7in3e (7.3" color)
 
 Usage:
     # For 2.15" display
@@ -16,6 +17,9 @@ Usage:
     
     # For 13.3" display  
     epd = UnifiedEPD.create_display("epd13in3E")
+    
+    # For 7.3" display
+    epd = UnifiedEPD.create_display("epd7in3e")
     
     # Common interface
     epd.init()
@@ -216,6 +220,65 @@ class EPD13in3EAdapter(EPDAdapter):
         return self._epd.YELLOW
 
 
+class EPD7in3eAdapter(EPDAdapter):
+    """Adapter for epd7in3e display"""
+    
+    def __init__(self):
+        # Import the actual display module
+        try:
+            from waveshare_epd import epd7in3e
+            self._epd = epd7in3e.EPD()
+        except ImportError:
+            logger.error("epd7in3e module not found. Make sure waveshare_epd is in your path.")
+            raise
+    
+    def init(self) -> int:
+        """Initialize the display"""
+        return self._epd.init()
+    
+    def display(self, image) -> None:
+        """Display an image"""
+        self._epd.display(image)
+    
+    def clear(self, color: Optional[int] = None) -> None:
+        """Clear the display"""
+        if color is None:
+            color = 0x11  # Default for 7in3e
+        self._epd.Clear(color)
+    
+    def sleep(self) -> None:
+        """Put display to sleep"""
+        self._epd.sleep()
+    
+    def getbuffer(self, image: Image.Image):
+        """Convert image to display buffer"""
+        return self._epd.getbuffer(image)
+    
+    @property
+    def width(self) -> int:
+        return self._epd.width
+    
+    @property
+    def height(self) -> int:
+        return self._epd.height
+    
+    @property
+    def WHITE(self) -> int:
+        return self._epd.WHITE
+    
+    @property
+    def BLACK(self) -> int:
+        return self._epd.BLACK
+    
+    @property
+    def RED(self) -> int:
+        return self._epd.RED
+    
+    @property
+    def YELLOW(self) -> int:
+        return self._epd.YELLOW
+
+
 class UnifiedEPD:
     """Factory class for creating unified EPD instances"""
     
@@ -224,13 +287,19 @@ class UnifiedEPD:
         "epd2in15g": {
             "class": EPD2in15gAdapter,
             "name": "2.15\" Grayscale Display",
-            "resolution": "160x296",
+            "resolution": (160, 296),
             "colors": "4-color grayscale"
         },
         "epd13in3E": {
             "class": EPD13in3EAdapter,
             "name": "13.3\" Color Display", 
-            "resolution": "1200x1600",
+            "resolution": (1200, 1600),
+            "colors": "7-color"
+        },
+        "epd7in3e": {
+            "class": EPD7in3eAdapter,
+            "name": "7.3\" Color Display",
+            "resolution": (800, 480),
             "colors": "7-color"
         }
     }
@@ -256,7 +325,8 @@ class UnifiedEPD:
         config = cls.DISPLAY_CONFIGS[display_type]
         adapter_class = config["class"]
         
-        logger.info(f"Creating {config['name']} ({config['resolution']}, {config['colors']})")
+        width, height = config['resolution']
+        logger.info(f"Creating {config['name']} ({width}x{height}, {config['colors']})")
         return adapter_class()
     
     @classmethod
@@ -268,6 +338,26 @@ class UnifiedEPD:
     def get_display_info(cls, display_type: str) -> Optional[dict]:
         """Get information about a specific display type"""
         return cls.DISPLAY_CONFIGS.get(display_type)
+    
+    @classmethod
+    def get_display_resolution(cls, display_type: str) -> Optional[tuple]:
+        """Get resolution as (width, height) tuple for a display type"""
+        config = cls.DISPLAY_CONFIGS.get(display_type)
+        return config['resolution'] if config else None
+    
+    @classmethod
+    def get_display_dimensions(cls, display_type: str) -> Optional[tuple]:
+        """Get display dimensions as (width, height) tuple (alias for get_display_resolution)"""
+        return cls.get_display_resolution(display_type)
+    
+    @classmethod
+    def get_display_pixel_count(cls, display_type: str) -> Optional[int]:
+        """Get total pixel count (width * height) for a display type"""
+        config = cls.DISPLAY_CONFIGS.get(display_type)
+        if config:
+            width, height = config['resolution']
+            return width * height
+        return None
 
 
 # Backward compatibility wrapper for existing code
@@ -392,7 +482,9 @@ if __name__ == "__main__":
     
     print("Available displays:")
     for display_type, config in UnifiedEPD.list_supported_displays().items():
-        print(f"  {display_type}: {config['name']} ({config['resolution']})")
+        width, height = config['resolution']
+        pixel_count = width * height
+        print(f"  {display_type}: {config['name']} ({width}x{height}, {pixel_count:,} pixels)")
     
     print("\nTesting display creation...")
     
@@ -407,8 +499,20 @@ if __name__ == "__main__":
         epd2 = UnifiedEPD.create_display("epd13in3E")
         print(f"  Created: {epd2.width}x{epd2.height}")
         
-        print("All tests passed!")
+        # Test 7.3" display
+        print("Testing epd7in3e...")
+        epd3 = UnifiedEPD.create_display("epd7in3e")
+        print(f"  Created: {epd3.width}x{epd3.height}")
         
-    except Exception as e:
-        print(f"Test failed: {e}")
-        print("This is expected if the display modules are not available in the current environment.") 
+                    print("All tests passed!")
+            
+            # Test utility methods
+            print("\nTesting utility methods...")
+            for display_type in ["epd2in15g", "epd13in3E", "epd7in3e"]:
+                resolution = UnifiedEPD.get_display_resolution(display_type)
+                pixel_count = UnifiedEPD.get_display_pixel_count(display_type)
+                print(f"  {display_type}: {resolution} = {pixel_count:,} pixels")
+            
+        except Exception as e:
+            print(f"Test failed: {e}")
+            print("This is expected if the display modules are not available in the current environment.") 
