@@ -670,6 +670,11 @@ def index():
     """Main web interface"""
     return render_template('index.html')
 
+@app.route('/favicon.ico')
+def favicon():
+    """Serve the favicon"""
+    return send_from_directory('static', 'favicon.ico')
+
 @app.route('/api/files')
 def api_list_files():
     """Enhanced file listing with thumbnails and metadata"""

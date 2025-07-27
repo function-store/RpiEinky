@@ -58,7 +58,7 @@ class EinkDisplayManager {
         });
         
         // Selected image events
-        document.getElementById('clear-default').addEventListener('click', this.clearDefaultImage.bind(this));
+
         
         // Settings input events
         document.getElementById('thumbnail-quality').addEventListener('input', (e) => {
@@ -192,6 +192,8 @@ class EinkDisplayManager {
         
         // Update the display after loading
         this.updateCurrentlyDisplayedImage();
+        
+
     }
     
     renderFiles() {
@@ -619,7 +621,7 @@ class EinkDisplayManager {
         document.getElementById('orientation').value = settings.orientation || 'landscape';
         
         // Update selected image display
-        this.updateSelectedImageDisplay(settings.selected_image || null);
+
     }
     
     async saveSettings() {
@@ -670,59 +672,6 @@ class EinkDisplayManager {
         }
     }
     
-    // ============ SELECTED IMAGE HANDLING ============
-    
-    async clearDefaultImage() {
-        try {
-            const response = await fetch('/clear_selected_image', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                }
-            });
-            
-            if (response.ok) {
-                const result = await response.json();
-                this.showToast(result.message || 'Default image cleared', 'success');
-                this.updateSelectedImageDisplay(null);
-                
-                // Refresh the currently displayed file info since selection was cleared
-                await this.loadCurrentlyDisplayedFile();
-                this.renderFiles();
-            } else {
-                const error = await response.json();
-                this.showToast(error.error || 'Failed to clear default image', 'error');
-            }
-        } catch (error) {
-            console.error('Error clearing default image:', error);
-            this.showToast('Failed to clear default image', 'error');
-        }
-    }
-    
-    updateSelectedImageDisplay(selectedImage) {
-        const section = document.getElementById('selected-image-section');
-        const info = document.getElementById('selected-image-info');
-        
-        if (selectedImage) {
-            section.style.display = 'block';
-            info.innerHTML = `
-                <div class="selected-image-card">
-                    <div class="selected-image-preview">
-                        <img src="/thumbnails/${selectedImage.replace(/\.[^/.]+$/, '')}_thumb.jpg" 
-                             alt="${selectedImage}" 
-                             onerror="this.style.display='none'">
-                    </div>
-                    <div class="selected-image-details">
-                        <h4>${selectedImage}</h4>
-                        <p>This image will be displayed by default when no recent uploads are available.</p>
-                    </div>
-                </div>
-            `;
-        } else {
-            section.style.display = 'none';
-        }
-    }
-    
     updateCurrentlyDisplayedImage() {
         const section = document.getElementById('currently-displayed-section');
         const info = document.getElementById('currently-displayed-info');
@@ -746,7 +695,12 @@ class EinkDisplayManager {
             section.style.display = 'none';
         }
     }
+
 }
+    
+
+    
+
 
 // Initialize the application when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
