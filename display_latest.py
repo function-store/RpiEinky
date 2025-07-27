@@ -22,7 +22,8 @@ libdir = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__)
 if os.path.exists(libdir):
     sys.path.append(libdir)
 
-from waveshare_epd import epd2in15g
+# Import the unified EPD adapter
+from unified_epd_adapter import UnifiedEPD, EPDConfig
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -101,15 +102,19 @@ def signal_handler_clear_exit(signum, frame):
 
 
 class EinkDisplayHandler(FileSystemEventHandler):
-    def __init__(self, watched_folder="~/watched_files", clear_on_start=False, clear_on_exit=True, disable_startup_timer=False, disable_refresh_timer=False, refresh_interval_hours=24, startup_delay_minutes=1, enable_manufacturer_timing=False, enable_sleep_mode=True):
+    def __init__(self, watched_folder="~/watched_files", clear_on_start=False, clear_on_exit=True, disable_startup_timer=False, disable_refresh_timer=False, refresh_interval_hours=24, startup_delay_minutes=1, enable_manufacturer_timing=False, enable_sleep_mode=True, display_type=None):
         logger.info("DEBUG: EinkDisplayHandler.__init__ called")
         self.watched_folder = Path(os.path.expanduser(watched_folder))
         self.watched_folder.mkdir(exist_ok=True)
         self.clear_on_start = clear_on_start
         self.clear_on_exit = clear_on_exit
         
-        # Initialize e-paper display
-        self.epd = epd2in15g.EPD()
+        # Initialize e-paper display using unified adapter
+        if display_type is None:
+            display_type = EPDConfig.load_display_config()
+        
+        logger.info(f"Initializing display type: {display_type}")
+        self.epd = UnifiedEPD.create_display(display_type)
         self.epd.init()
         
         # Clear screen on start if requested
@@ -1169,18 +1174,24 @@ Timing Features:
                        help='Enable manufacturer timing requirements (180s minimum refresh interval)')
     parser.add_argument('--disable-sleep-mode', action='store_true',
                        help='Disable sleep mode between operations (faster but uses more power)')
+    parser.add_argument('--display-type', choices=['epd2in15g', 'epd13in3E'],
+                       help='Specify display type (default: loaded from config file)')
     
     args = parser.parse_args()
     
     # Handle IP display option (show IP and exit)
     if args.show_ip:
         try:
+            # Load display type from config
+            display_type = EPDConfig.load_display_config()
+            logger.info(f"Using display type for IP display: {display_type}")
+            
             # Initialize display just for IP display
-            epd = epd2in15g.EPD()
+            epd = UnifiedEPD.create_display(display_type)
             epd.init()
             
             # Create temporary handler just to display IP
-            temp_handler = EinkDisplayHandler(clear_on_start=False, clear_on_exit=False)
+            temp_handler = EinkDisplayHandler(clear_on_start=False, clear_on_exit=False, display_type=display_type)
             temp_handler.orientation = args.orientation
             temp_handler.display_ip_address()
             
@@ -1203,6 +1214,7 @@ Timing Features:
     STARTUP_DELAY_MINUTES = args.startup_delay
     ENABLE_MANUFACTURER_TIMING = args.enable_manufacturer_timing
     ENABLE_SLEEP_MODE = not args.disable_sleep_mode
+    DISPLAY_TYPE = args.display_type
     
     # Set up signal handlers only if we're in the main thread
     signal_handlers_registered = False
@@ -1224,7 +1236,8 @@ Timing Features:
                                refresh_interval_hours=REFRESH_INTERVAL_HOURS,
                                startup_delay_minutes=STARTUP_DELAY_MINUTES,
                                enable_manufacturer_timing=ENABLE_MANUFACTURER_TIMING,
-                               enable_sleep_mode=ENABLE_SLEEP_MODE)
+                               enable_sleep_mode=ENABLE_SLEEP_MODE,
+                               display_type=DISPLAY_TYPE)
     handler.orientation = ORIENTATION
     
     # Set up file system observer

@@ -136,8 +136,28 @@ Settings are saved to `~/watched_files/.settings.json` and persist across restar
 ## 🛠️ Hardware Requirements
 
 - Raspberry Pi (any model)
-- Waveshare 2.15" e-paper display (4-color)
+- Waveshare e-paper display (supported models below)
 - Proper wiring as per Waveshare documentation
+
+### Supported Display Models
+
+The system supports multiple e-paper display models through the unified display adapter:
+
+#### **Currently Supported:**
+- **Waveshare 2.15" e-paper display (4-color grayscale)** - `epd2in15g`
+- **Waveshare 13.3" e-paper display (7-color)** - `epd13in3E`
+
+#### **Display Configuration:**
+The display type is automatically detected from the configuration file `~/watched_files/.epd_config.json`:
+
+```json
+{
+  "display_type": "epd2in15g"
+}
+```
+
+#### **Adding New Display Support:**
+To add support for additional display models, see the [Unified Display System Documentation](README_UNIFIED_DISPLAY.md).
 
 ## 📦 Installation
 
@@ -158,6 +178,8 @@ sudo raspi-config nonint do_spi 0
 
 ### Step 2: Get Waveshare e-Paper Library
 
+> **⚠️ Library Disclaimer**: The Waveshare e-Paper library name, location, and structure may vary depending on your display model, download method, and Waveshare's current repository organization. The paths shown below are examples - you may need to adjust them based on your specific setup.
+
 **Option A: Download specific files (Recommended for 2.15" display)**
 ```bash
 # Download the specific files for your display
@@ -173,6 +195,13 @@ git clone https://github.com/waveshare/e-Paper.git
 ```
 *Advantages: All displays supported, latest updates, full documentation*
 
+**Option C: Download from Waveshare website**
+```bash
+# Visit https://www.waveshare.com/wiki/2.15inch_e-Paper_HAT_(G)
+# Download the appropriate library for your display model
+# Extract and follow the installation instructions in the downloaded package
+```
+
 ### Step 3: Set Up Virtual Environment and Install Libraries
 
 ```bash
@@ -185,7 +214,7 @@ source eink_env/bin/activate
 pip install -r requirements.txt
 
 # Install Waveshare e-Paper library into virtual environment
-# Choose the path based on which option you used in Step 2:
+# ⚠️ IMPORTANT: Adjust these paths based on your actual library location and structure
 
 # If you downloaded specific files (Option A):
 cp -r 2in15_e-Paper_G/RaspberryPi_JetsonNano/python/lib/waveshare_epd eink_env/lib/python3.*/site-packages/
@@ -195,8 +224,66 @@ cp -r 2in15_e-Paper_G/RaspberryPi_JetsonNano/python/pic ./
 cp -r e-Paper/RaspberryPi_JetsonNano/python/lib/waveshare_epd eink_env/lib/python3.*/site-packages/
 cp -r e-Paper/RaspberryPi_JetsonNano/python/pic ./
 
+# OR if you downloaded from website (Option C):
+# Follow the specific instructions in your downloaded package
+# Common variations:
+# cp -r e-Paper_HAT_G/RaspberryPi/python/lib/waveshare_epd eink_env/lib/python3.*/site-packages/
+# cp -r e-Paper_HAT_G/RaspberryPi/python/pic ./
+
 # Test that the library works
 python -c "from waveshare_epd import epd2in15g; print('Waveshare library installed successfully!')"
+```
+
+### Step 4: Troubleshooting Library Installation
+
+If you encounter import errors, the library structure may be different. Here are common variations:
+
+**Different folder names:**
+```bash
+# Instead of "waveshare_epd", the folder might be named:
+# - "waveshare_epd"
+# - "epd"
+# - "lib"
+# - "python"
+
+# Check what's actually in your downloaded/extracted folder:
+ls -la 2in15_e-Paper_G/
+ls -la e-Paper/
+```
+
+**Different file locations:**
+```bash
+# The library might be in different subdirectories:
+# - RaspberryPi_JetsonNano/python/lib/
+# - RaspberryPi/python/lib/
+# - python/lib/
+# - lib/
+# - directly in the root folder
+
+# Find the actual location:
+find . -name "epd2in15g.py" -type f
+find . -name "waveshare_epd" -type d
+```
+
+**Alternative installation methods:**
+```bash
+# Method 1: Copy the entire python folder
+cp -r 2in15_e-Paper_G/RaspberryPi_JetsonNano/python/* eink_env/lib/python3.*/site-packages/
+
+# Method 2: Add to Python path instead of copying
+export PYTHONPATH="${PYTHONPATH}:$(pwd)/2in15_e-Paper_G/RaspberryPi_JetsonNano/python/lib"
+
+# Method 3: Install as a package (if setup.py exists)
+cd 2in15_e-Paper_G/RaspberryPi_JetsonNano/python
+pip install -e .
+```
+
+**Verify the correct import:**
+```bash
+# Test different possible import paths:
+python -c "from waveshare_epd import epd2in15g; print('Success!')"
+python -c "import epd2in15g; print('Success!')"
+python -c "from epd import epd2in15g; print('Success!')"
 ```
 
 ### Step 4: Test Installation
@@ -292,6 +379,7 @@ python display_latest.py -d ~/welcome.jpg -f ~/my_files --clear-start --no-clear
 | `--refresh-interval` | - | Hours between display refreshes to prevent ghosting | 24 |
 | `--enable-manufacturer-timing` | - | Enable manufacturer timing requirements (180s minimum) | False |
 | `--disable-sleep-mode` | - | Disable sleep mode between operations (faster but uses more power) | False |
+| `--display-type` | - | Specify display type (epd2in15g, epd13in3E) | Loaded from config file |
 | `--help` | `-h` | Show help message and exit | - |
 
 ### Supported File Types
@@ -1315,6 +1403,9 @@ python show_ip.py
 # Basic monitoring with default settings
 python display_latest.py
 
+# Use specific display type (overrides config file)
+python display_latest.py --display-type epd13in3E
+
 # Show a welcome image immediately, then monitor for new files (also sets it as selected image)
 python display_latest.py --display-file ~/Pictures/welcome.jpg
 
@@ -1568,6 +1659,20 @@ nslookup google.com
 ## 🤝 Contributing
 
 Feel free to submit issues and pull requests to improve the system!
+
+## ⚠️ Disclaimer
+
+**HARDWARE DAMAGE DISCLAIMER**: This software is provided "as is" without warranty of any kind. The authors and contributors are not responsible for any damage to hardware, including but not limited to e-paper displays, Raspberry Pi devices, or any other electronic components. Users assume all risks associated with the use of this software.
+
+**IMPORTANT SAFETY NOTES**:
+- Always follow the manufacturer's wiring instructions for your specific display model
+- Ensure proper power supply and voltage requirements are met
+- Do not force connections or modify hardware without proper knowledge
+- Test with low-risk operations before running intensive display operations
+- Monitor display temperature and operation during extended use
+- Follow e-paper display refresh timing guidelines to prevent damage
+
+**MANUFACTURER TIMING**: The system includes optional manufacturer timing requirements (180-second minimum refresh intervals) to help prevent display damage. It is recommended to enable these features for long-term display health.
 
 ## 📄 License
 
