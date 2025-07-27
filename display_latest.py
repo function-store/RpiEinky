@@ -577,17 +577,19 @@ class EinkDisplayHandler(FileSystemEventHandler):
                     # Refresh the display with current priority file
                     logger.info("Executing refresh display command")
                     
+                    # During startup, just reload settings without forcing a display refresh
+                    if self.startup_timer_active:
+                        logger.info("Settings change detected during startup - reloading settings without display refresh")
+                        self.reload_settings()  # Still reload settings for future use
+                        return
                     
+                    # Normal refresh behavior (outside startup)
                     self.reload_settings()  # Reload settings first
                     priority_file = self.get_priority_display_file()
                     if priority_file:
                         logger.info(f"Refreshing display with priority file: {priority_file.name}")
                         self.display_file(priority_file)
                         self.current_displayed_file = priority_file
-                        # Mark that settings were changed during startup
-                        if self.startup_timer_active:
-                            logger.info("Settings change detected during startup - will cancel automatic priority display")
-                            self.manual_selection_during_startup = True
                     else:
                         logger.info("No priority file found for refresh")
                 
