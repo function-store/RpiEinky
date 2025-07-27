@@ -4,6 +4,7 @@ class EinkDisplayManager {
         this.selectedFiles = new Set();
         this.selectionMode = false;
         this.files = [];
+        this.currentlyDisplayedFile = null;
         
         this.init();
     }
@@ -52,6 +53,9 @@ class EinkDisplayManager {
         document.getElementById('settings-modal').addEventListener('click', (e) => {
             if (e.target.id === 'settings-modal') this.closeSettings();
         });
+        
+        // Selected image events
+        document.getElementById('clear-default').addEventListener('click', this.clearDefaultImage.bind(this));
         
         // Settings input events
         document.getElementById('thumbnail-quality').addEventListener('input', (e) => {
@@ -156,12 +160,31 @@ class EinkDisplayManager {
             const data = await response.json();
             
             this.files = data.files || [];
+            
+            // Get currently displayed file info
+            await this.loadCurrentlyDisplayedFile();
+            
             this.renderFiles();
             this.updateFileStats();
             
         } catch (error) {
             console.error('Failed to load files:', error);
             this.showToast('Failed to load files', 'error');
+        }
+    }
+    
+    async loadCurrentlyDisplayedFile() {
+        try {
+            const response = await fetch('/displayed_file');
+            if (response.ok) {
+                const data = await response.json();
+                this.currentlyDisplayedFile = data.filename;
+            } else {
+                this.currentlyDisplayedFile = null;
+            }
+        } catch (error) {
+            console.error('Failed to load currently displayed file:', error);
+            this.currentlyDisplayedFile = null;
         }
     }
     
@@ -187,15 +210,17 @@ class EinkDisplayManager {
         const fileSize = this.formatFileSize(file.size);
         const fileDate = new Date(file.modified * 1000).toLocaleDateString();
         const iconClass = this.getFileIconClass(file.type);
+        const isCurrentlyDisplayed = this.currentlyDisplayedFile === file.filename;
         
         return `
-            <div class="file-card ${this.selectionMode ? 'selection-mode' : ''}" data-filename="${file.filename}">
+            <div class="file-card ${this.selectionMode ? 'selection-mode' : ''} ${isCurrentlyDisplayed ? 'currently-displayed' : ''}" data-filename="${file.filename}">
                 <div class="file-preview">
                     ${file.thumbnail ? 
                         `<img src="${file.thumbnail}" alt="${file.filename}">` : 
                         `<i class="fas ${iconClass} file-icon ${file.type}"></i>`
                     }
                     <input type="checkbox" class="file-checkbox" ${this.selectedFiles.has(file.filename) ? 'checked' : ''}>
+                    ${isCurrentlyDisplayed ? '<div class="currently-displayed-badge"><i class="fas fa-tv"></i> Currently Displayed</div>' : ''}
                 </div>
                 <div class="file-info">
                     <div class="file-name">${file.filename}</div>
@@ -204,8 +229,8 @@ class EinkDisplayManager {
                         <span>${fileDate}</span>
                     </div>
                     <div class="file-actions">
-                        <button class="file-btn display" data-action="display">
-                            <i class="fas fa-eye"></i> Display
+                        <button class="file-btn display" data-action="display" ${isCurrentlyDisplayed ? 'disabled' : ''}>
+                            <i class="fas fa-eye"></i> ${isCurrentlyDisplayed ? 'Displayed' : 'Display'}
                         </button>
                         <button class="file-btn delete" data-action="delete">
                             <i class="fas fa-trash"></i> Delete
@@ -284,6 +309,17 @@ class EinkDisplayManager {
         const fileCount = this.files.length;
         const fileCountText = fileCount === 1 ? '1 file' : `${fileCount} files`;
         document.getElementById('file-stats').querySelector('.file-count').textContent = fileCountText;
+        
+        // Update currently displayed info
+        const currentlyDisplayedInfo = document.getElementById('currently-displayed-info');
+        const currentlyDisplayedFilename = document.getElementById('currently-displayed-filename');
+        
+        if (this.currentlyDisplayedFile) {
+            currentlyDisplayedFilename.textContent = this.currentlyDisplayedFile;
+            currentlyDisplayedInfo.style.display = 'flex';
+        } else {
+            currentlyDisplayedInfo.style.display = 'none';
+        }
     }
     
     // ============ FILE ACTIONS ============
@@ -299,7 +335,16 @@ class EinkDisplayManager {
             const data = await response.json();
             
             if (response.ok) {
-                this.showToast(`Displaying: ${filename}`, 'success');
+                this.showToast(data.message || `Displaying: ${filename}`, 'success');
+                
+                // Update selected image display if this file was set as default
+                if (data.selected_image) {
+                    this.updateSelectedImageDisplay(data.selected_image);
+                }
+                
+                // Refresh the currently displayed file info and re-render
+                await this.loadCurrentlyDisplayedFile();
+                this.renderFiles();
             } else {
                 throw new Error(data.error || 'Failed to display file');
             }
@@ -421,6 +466,10 @@ class EinkDisplayManager {
             
             if (response.ok) {
                 this.showToast('Display cleared', 'success');
+                
+                // Refresh the currently displayed file info since display is now cleared
+                await this.loadCurrentlyDisplayedFile();
+                this.renderFiles();
             } else {
                 throw new Error(data.error || 'Failed to clear display');
             }
@@ -570,6 +619,9 @@ class EinkDisplayManager {
         document.getElementById('enable-manufacturer-timing').checked = settings.enable_manufacturer_timing === true;
         document.getElementById('enable-sleep-mode').checked = settings.enable_sleep_mode !== false;
         document.getElementById('orientation').value = settings.orientation || 'landscape';
+        
+        // Update selected image display
+        this.updateSelectedImageDisplay(settings.selected_image || null);
     }
     
     async saveSettings() {
@@ -617,6 +669,59 @@ class EinkDisplayManager {
         } catch (error) {
             console.error('Error saving settings:', error);
             this.showToast(`Failed to save settings: ${error.message}`, 'error');
+        }
+    }
+    
+    // ============ SELECTED IMAGE HANDLING ============
+    
+    async clearDefaultImage() {
+        try {
+            const response = await fetch('/clear_selected_image', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+            
+            if (response.ok) {
+                const result = await response.json();
+                this.showToast(result.message || 'Default image cleared', 'success');
+                this.updateSelectedImageDisplay(null);
+                
+                // Refresh the currently displayed file info since selection was cleared
+                await this.loadCurrentlyDisplayedFile();
+                this.renderFiles();
+            } else {
+                const error = await response.json();
+                this.showToast(error.error || 'Failed to clear default image', 'error');
+            }
+        } catch (error) {
+            console.error('Error clearing default image:', error);
+            this.showToast('Failed to clear default image', 'error');
+        }
+    }
+    
+    updateSelectedImageDisplay(selectedImage) {
+        const section = document.getElementById('selected-image-section');
+        const info = document.getElementById('selected-image-info');
+        
+        if (selectedImage) {
+            section.style.display = 'block';
+            info.innerHTML = `
+                <div class="selected-image-card">
+                    <div class="selected-image-preview">
+                        <img src="/thumbnails/${selectedImage.replace(/\.[^/.]+$/, '')}_thumb.jpg" 
+                             alt="${selectedImage}" 
+                             onerror="this.style.display='none'">
+                    </div>
+                    <div class="selected-image-details">
+                        <h4>${selectedImage}</h4>
+                        <p>This image will be displayed by default when no recent uploads are available.</p>
+                    </div>
+                </div>
+            `;
+        } else {
+            section.style.display = 'none';
         }
     }
 }

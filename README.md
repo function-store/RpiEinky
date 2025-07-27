@@ -50,10 +50,10 @@ A comprehensive e-ink display management system with both file monitoring and **
 The system includes configurable timing features to improve display reliability and follow manufacturer recommendations:
 
 #### **🚀 Configurable Startup Display**
-- **Purpose**: Ensures the latest file is displayed if no updates occur within a configurable time of startup
-- **Behavior**: If no new files have been uploaded since the system started, it automatically displays the most recent file in the watched folder
-- **Default**: 1 minute
-- **Use case**: Useful when the system restarts and you want to ensure the display shows the last known content
+- **Purpose**: Shows welcome screen immediately, then displays priority file after configurable delay
+- **Behavior**: Welcome screen → wait → priority file (selected image, recent upload, or latest file)
+- **Default**: 1 minute delay
+- **Use case**: Provides clear startup sequence and ensures priority file is displayed
 - **Configuration**: Use `--startup-delay <minutes>` to set custom delay (e.g., `--startup-delay 5` for 5 minutes)
 
 #### **🔄 Configurable Refresh**
@@ -65,7 +65,7 @@ The system includes configurable timing features to improve display reliability 
 - **Configuration**: Use `--refresh-interval <hours>` to set custom interval (e.g., `--refresh-interval 12` for 12 hours)
 
 #### **🎛️ Timing Control**
-- **Startup Timer**: Use `--disable-startup-timer` flag to disable automatic startup display
+- **Startup Timer**: Use `--disable-startup-timer` flag to disable startup timer (show priority file immediately)
 - **Refresh Timer**: Use `--disable-refresh-timer` flag to disable automatic refresh
 - **Startup Delay**: Use `--startup-delay <minutes>` to set custom startup delay
 - **Refresh Interval**: Use `--refresh-interval <hours>` to set custom refresh interval
@@ -88,10 +88,10 @@ The system includes configurable timing features to improve display reliability 
 - **Configuration**: Enable/disable via web interface settings
 
 **Common Startup Delays:**
-- `--startup-delay 0` - No delay, display immediately (if no updates)
-- `--startup-delay 1` - 1 minute delay (default)
-- `--startup-delay 5` - 5 minute delay (for slower networks)
-- `--startup-delay 10` - 10 minute delay (for very slow networks)
+- `--startup-delay 0` - No delay, welcome screen then priority file immediately
+- `--startup-delay 1` - 1 minute delay (default): welcome screen → wait 1 min → priority file
+- `--startup-delay 5` - 5 minute delay: welcome screen → wait 5 min → priority file
+- `--startup-delay 10` - 10 minute delay: welcome screen → wait 10 min → priority file
 
 **Common Refresh Intervals:**
 - `--refresh-interval 6` - Refresh every 6 hours (for high-usage environments)
@@ -115,8 +115,8 @@ Access settings via the **Settings** button in the web interface:
 - **Default:** 85 (good balance of quality/size)
 
 #### **🚀 Startup Timer**
-- **Enabled (Default):** Automatically displays latest file after startup delay
-- **Disabled:** No automatic startup display
+- **Enabled (Default):** Shows welcome screen immediately, then displays priority file after startup delay
+- **Disabled:** Displays priority file immediately (no welcome screen or delay)
 
 #### **🔄 Refresh Timer**
 - **Enabled (Default):** Automatically refreshes display at configured interval
@@ -266,8 +266,8 @@ python display_latest.py --clear-start --no-clear-exit  # Clear on start only
 python display_latest.py --orientation landscape    # Normal (not upside-down)
 
 # Control timing features
-python display_latest.py --disable-timing        # Disable automatic timing features
-python display_latest.py --startup-delay 5       # Set startup delay to 5 minutes
+python display_latest.py --disable-startup-timer  # Disable startup timer (show priority file immediately)
+python display_latest.py --startup-delay 5       # 5-minute startup delay (welcome screen → wait 5 min → priority file)
 python display_latest.py --refresh-interval 12   # Set refresh interval to 12 hours
 
 # Combine multiple options
@@ -288,7 +288,7 @@ python display_latest.py -d ~/welcome.jpg -f ~/my_files --clear-start --no-clear
 | `--orientation` | - | Display orientation (landscape, landscape_upside_down, portrait, portrait_upside_down) | landscape |
 | `--disable-startup-timer` | - | Disable automatic startup display timer | False |
 | `--disable-refresh-timer` | - | Disable automatic refresh timer | False |
-| `--startup-delay` | - | Minutes to wait before displaying latest file on startup | 1 |
+| `--startup-delay` | - | Minutes to wait before displaying priority file on startup (shows welcome screen first) | 1 |
 | `--refresh-interval` | - | Hours between display refreshes to prevent ghosting | 24 |
 | `--enable-manufacturer-timing` | - | Enable manufacturer timing requirements (180s minimum) | False |
 | `--disable-sleep-mode` | - | Disable sleep mode between operations (faster but uses more power) | False |
@@ -504,6 +504,7 @@ The system includes a complete TouchDesigner integration for remote file uploads
 | `/status` | GET | Server status | Returns JSON status |
 | `/list_files` | GET | List all files in watched folder | No data |
 | `/latest_file` | GET | Get info about most recent file | No data |
+| `/displayed_file` | GET | Get info about currently displayed file (priority system) | No data |
 | `/cleanup_old_files` | POST | Remove old files, keep recent N files | JSON: `{"keep_count": 10}` |
 | `/clear_screen` | POST | Clear the e-ink display | No data |
 
@@ -532,9 +533,31 @@ The system includes a complete TouchDesigner integration for remote file uploads
 3. **Files accumulate** → Previous files remain available in the watched folder
 4. **Display shows latest** → The system always shows the most recent file
 
+### 🎯 **Priority Display System**
+
+The system uses a smart priority system to determine which file to display:
+
+**Priority Order:**
+1. **Selected Image** (highest priority) - User explicitly selected via web interface or `--display-file`
+2. **Recent Upload** - Last uploaded file (if auto-display enabled AND no selection made)
+3. **Latest File** - Most recent file in the folder (fallback)
+4. **Welcome Screen** - If no files available
+
+**Examples:**
+- **User selects "image1.jpg"** → Always displays "image1.jpg" (until changed)
+- **New upload "image2.jpg"** → Still shows "image1.jpg" (selection takes priority)
+- **User clears selection** → Shows "image2.jpg" (recent upload)
+- **No recent uploads** → Shows most recent file in folder
+
+**Startup Behavior:**
+- **With startup timer** → Welcome screen → wait → priority file
+- **Without startup timer** → Priority file immediately
+- **`--display-file`** → Shows specified file AND sets it as selected
+
 **Managing Storage:**
 - Use `/list_files` to see all files in the watched folder (sorted by newest first)
-- Use `/latest_file` to get info about the currently displayed file
+- Use `/latest_file` to get info about the most recent file
+- Use `/displayed_file` to get info about the currently displayed file (respects priority system)
 - Use `/cleanup_old_files` to remove old files while keeping recent ones (recommended for long-term use)
 - Use `/clear_screen` to clear the display without removing files
 
@@ -547,6 +570,12 @@ curl -X POST http://192.168.1.100:5000/cleanup_old_files \
 
 # Clear the display
 curl -X POST http://192.168.1.100:5000/clear_screen
+
+# Get info about currently displayed file (respects priority system)
+curl http://192.168.1.100:5000/displayed_file
+
+# Get info about most recent file (ignores priority system)
+curl http://192.168.1.100:5000/latest_file
 ```
 
 ### Running Both Systems
@@ -1286,7 +1315,7 @@ python show_ip.py
 # Basic monitoring with default settings
 python display_latest.py
 
-# Show a welcome image immediately, then monitor for new files
+# Show a welcome image immediately, then monitor for new files (also sets it as selected image)
 python display_latest.py --display-file ~/Pictures/welcome.jpg
 
 # Monitor a specific folder with clean start
@@ -1298,9 +1327,9 @@ python display_latest.py --orientation portrait
 python display_latest.py --orientation portrait_upside_down
 
 # Control timing features
-python display_latest.py --disable-startup-timer  # Disable startup timer only
+python display_latest.py --disable-startup-timer  # Disable startup timer (show priority file immediately)
 python display_latest.py --disable-refresh-timer  # Disable refresh timer only
-python display_latest.py --startup-delay 5       # 5-minute startup delay
+python display_latest.py --startup-delay 5       # 5-minute startup delay (welcome screen → wait 5 min → priority file)
 python display_latest.py --refresh-interval 12   # 12-hour refresh interval
 
 # Control manufacturer requirements and sleep mode

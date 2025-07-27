@@ -2,3 +2,6 @@ td/Backup
 td/temp
 .DS_Store
 *.*.toe
+watched_files/
+venv/
+__pycache__/

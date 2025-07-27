@@ -64,12 +64,29 @@
             </div>
         </section>
 
+        <!-- Selected Image Section -->
+        <section class="selected-image-section" id="selected-image-section" style="display: none;">
+            <div class="section-header">
+                <h2><i class="fas fa-star"></i> Default Display Image</h2>
+                <button class="control-btn danger-btn" id="clear-default">
+                    <i class="fas fa-times"></i>
+                    Clear Default
+                </button>
+            </div>
+            <div class="selected-image-info" id="selected-image-info">
+                <!-- Selected image info will be shown here -->
+            </div>
+        </section>
+
         <!-- File Gallery Section -->
         <section class="files-section">
             <div class="section-header">
                 <h2><i class="fas fa-folder-open"></i> File Gallery</h2>
                 <div class="file-stats" id="file-stats">
                     <span class="file-count">0 files</span>
+                    <span class="currently-displayed-info" id="currently-displayed-info" style="display: none;">
+                        <i class="fas fa-tv"></i> Currently Displayed: <span id="currently-displayed-filename"></span>
+                    </span>
                 </div>
             </div>
             
@@ -128,9 +145,22 @@
                 <h3><i class="fas fa-cog"></i> Display Settings</h3>
             </div>
             <div class="modal-body">
-                <!-- Image Processing Settings -->
+                <!-- Display Settings -->
                 <div class="settings-section">
-                    <h4><i class="fas fa-image"></i> Image Processing</h4>
+                    <h4><i class="fas fa-mobile-alt"></i> Display Settings</h4>
+                    <div class="setting-group">
+                        <label for="orientation">Display Orientation:</label>
+                        <select id="orientation" class="setting-input">
+                            <option value="landscape">Landscape (Normal) - Default</option>
+                            <option value="landscape_flipped">Landscape (Upside Down)</option>
+                            <option value="portrait">Portrait (Normal)</option>
+                            <option value="portrait_flipped">Portrait (Upside Down)</option>
+                        </select>
+                        <p class="setting-description">
+                            Choose how the display content is oriented. <strong>Portrait modes</strong> rotate the content 90° for vertical mounting.
+                        </p>
+                    </div>
+                    
                     <div class="setting-group">
                         <label for="image-crop-mode">Image Processing Mode:</label>
                         <select id="image-crop-mode" class="setting-input">
@@ -142,7 +172,11 @@
                             <strong>Fit with Letterbox:</strong> Images are scaled to fit with black bars if needed
                         </p>
                     </div>
-                    
+                </div>
+                
+                <!-- Upload Behavior -->
+                <div class="settings-section">
+                    <h4><i class="fas fa-upload"></i> Upload Behavior</h4>
                     <div class="setting-group">
                         <label for="auto-display-upload">Auto-Display Uploads:</label>
                         <input type="checkbox" id="auto-display-upload" class="setting-input">
@@ -161,7 +195,7 @@
                     </div>
                 </div>
                 
-                <!-- Timing Settings -->
+                <!-- Timing Control -->
                 <div class="settings-section">
                     <h4><i class="fas fa-clock"></i> Timing Control</h4>
                     <div class="setting-group">
@@ -193,23 +227,6 @@
                         <input type="number" id="refresh-interval" class="setting-input" min="1" max="168" step="1">
                         <p class="setting-description">
                             How often to refresh the display to prevent ghosting (default: 24 hours)
-                        </p>
-                    </div>
-                </div>
-                
-                <!-- Display Settings -->
-                <div class="settings-section">
-                    <h4><i class="fas fa-mobile-alt"></i> Display Settings</h4>
-                    <div class="setting-group">
-                        <label for="orientation">Display Orientation:</label>
-                        <select id="orientation" class="setting-input">
-                            <option value="landscape">Landscape (Normal) - Default</option>
-                            <option value="landscape_flipped">Landscape (Upside Down)</option>
-                            <option value="portrait">Portrait (Normal)</option>
-                            <option value="portrait_flipped">Portrait (Upside Down)</option>
-                        </select>
-                        <p class="setting-description">
-                            Choose how the display content is oriented. <strong>Portrait modes</strong> rotate the content 90° for vertical mounting.
                         </p>
                     </div>
                 </div>

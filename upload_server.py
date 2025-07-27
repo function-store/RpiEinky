@@ -186,31 +186,21 @@ def trigger_settings_reload_and_redisplay():
 def display_file_on_eink(filename):
     """Display a specific file on the e-ink display"""
     try:
-        # Import display handler
-        import sys
-        from pathlib import Path as PathlibPath
+        # Save the selected image setting
+        settings = load_settings()
+        settings['selected_image'] = filename
+        save_settings(settings)
         
-        # Add script directory to path to import display_latest
-        script_dir = PathlibPath(__file__).parent
-        sys.path.insert(0, str(script_dir))
-        
-        from display_latest import EinkDisplayHandler
-        
-        # Get current settings
-        crop_mode = get_setting('image_crop_mode', 'center_crop')
-        
-        # Create handler and display file
-        handler = EinkDisplayHandler(clear_on_start=False, clear_on_exit=False)
-        handler.reload_settings()  # Reload settings to get latest values
-        file_path = PathlibPath(UPLOAD_FOLDER) / filename
-        
+        # Touch the file to trigger the existing handler's file watcher
+        file_path = Path(UPLOAD_FOLDER) / filename
         if not file_path.exists():
             raise FileNotFoundError(f"File not found: {filename}")
         
-        handler.display_file(file_path)
-        handler.cleanup(force_clear=False)  # Don't clear display after showing
+        # Update the file's modification time to trigger the file watcher
+        import os
+        os.utime(file_path, None)  # Sets mtime to current time
         
-        logger.info(f"Displayed file on e-ink: {filename} (crop mode: {crop_mode})")
+        logger.info(f"Set {filename} as selected image and triggered file watcher")
         return True
         
     except Exception as e:
