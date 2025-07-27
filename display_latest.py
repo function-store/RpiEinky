@@ -25,12 +25,15 @@ if os.path.exists(libdir):
 from waveshare_epd import epd2in15g
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # Global variables for exit handling
 exit_requested = False
 clear_on_exit_requested = True
+
+# Global lock to prevent concurrent display operations
+display_lock = threading.Lock()
 
 def get_ip_address():
     """Get the device's IP address"""
@@ -98,8 +101,9 @@ def signal_handler_clear_exit(signum, frame):
 
 
 class EinkDisplayHandler(FileSystemEventHandler):
-    def __init__(self, watched_folder="./watched_files", clear_on_start=False, clear_on_exit=True, disable_startup_timer=False, disable_refresh_timer=False, refresh_interval_hours=24, startup_delay_minutes=1, enable_manufacturer_timing=False, enable_sleep_mode=True):
-        self.watched_folder = Path(watched_folder)
+    def __init__(self, watched_folder="~/watched_files", clear_on_start=False, clear_on_exit=True, disable_startup_timer=False, disable_refresh_timer=False, refresh_interval_hours=24, startup_delay_minutes=1, enable_manufacturer_timing=False, enable_sleep_mode=True):
+        logger.info("DEBUG: EinkDisplayHandler.__init__ called")
+        self.watched_folder = Path(os.path.expanduser(watched_folder))
         self.watched_folder.mkdir(exist_ok=True)
         self.clear_on_start = clear_on_start
         self.clear_on_exit = clear_on_exit
@@ -185,13 +189,17 @@ class EinkDisplayHandler(FileSystemEventHandler):
     def startup_timer_worker(self):
         """Worker thread for configurable startup display delay"""
         try:
+            # Show welcome screen first
+            logger.info("Showing welcome screen during startup delay...")
+            self.display_welcome_screen()
+            
             # Wait for the configured startup delay
             startup_delay_seconds = self.startup_delay_minutes * 60
             time.sleep(startup_delay_seconds)
             
-            # Check if we should display the latest file
+            # Check if we should display the priority file
             if not exit_requested:
-                logger.info(f"{self.startup_delay_minutes}-minute startup timer triggered - checking for latest file")
+                logger.info(f"{self.startup_delay_minutes}-minute startup timer triggered - checking for priority file")
                 self.display_latest_file_if_no_updates()
                 
         except Exception as e:
@@ -213,21 +221,23 @@ class EinkDisplayHandler(FileSystemEventHandler):
             logger.error(f"Refresh timer worker error: {e}")
     
     def display_latest_file_if_no_updates(self):
-        """Display the latest file if no updates have happened since startup"""
+        """Display the priority file if no updates have happened since startup"""
         try:
-            # Check if any files have been updated since startup
-            latest_file = self.get_latest_file()
-            if latest_file:
-                file_mtime = latest_file.stat().st_mtime
+            # Get the priority file to display
+            priority_file = self.get_priority_display_file()
+            
+            if priority_file:
+                # Check if this file was updated since startup
+                file_mtime = priority_file.stat().st_mtime
                 if file_mtime < self.startup_time:
-                    # No new files since startup, display the latest file
-                    logger.info(f"No updates since startup - displaying latest file: {latest_file.name}")
-                    self.display_file(latest_file)
-                    self.current_displayed_file = latest_file
+                    # No new files since startup, display the priority file
+                    logger.info(f"No updates since startup - displaying priority file: {priority_file.name}")
+                    self.display_file(priority_file)
+                    self.current_displayed_file = priority_file
                 else:
                     logger.info("Files have been updated since startup - skipping startup display")
             else:
-                logger.info("No files found for startup display")
+                logger.info("No priority file found for startup display")
                 
         except Exception as e:
             logger.error(f"Error in startup display: {e}")
@@ -241,21 +251,16 @@ class EinkDisplayHandler(FileSystemEventHandler):
             self.epd.Clear()
             time.sleep(1)
             
-            # Re-display the current file if we have one
-            if self.current_displayed_file and self.current_displayed_file.exists():
-                logger.info(f"Re-displaying current file after refresh: {self.current_displayed_file.name}")
-                self.display_file(self.current_displayed_file)
+            # Get the priority file to display
+            priority_file = self.get_priority_display_file()
+            if priority_file:
+                logger.info(f"Displaying priority file after refresh: {priority_file.name}")
+                self.display_file(priority_file)
+                self.current_displayed_file = priority_file
             else:
-                # No current file, try to display the latest file
-                latest_file = self.get_latest_file()
-                if latest_file:
-                    logger.info(f"Displaying latest file after refresh: {latest_file.name}")
-                    self.display_file(latest_file)
-                    self.current_displayed_file = latest_file
-                else:
-                    # No files available, show welcome screen
-                    logger.info("No files available after refresh - showing welcome screen")
-                    self.display_welcome_screen()
+                # No priority file available, show welcome screen
+                logger.info("No priority file available after refresh - showing welcome screen")
+                self.display_welcome_screen()
             
             self.last_refresh_time = time.time()
             logger.info(f"{self.refresh_interval_hours}-hour refresh completed successfully")
@@ -291,8 +296,9 @@ class EinkDisplayHandler(FileSystemEventHandler):
                     self.disable_refresh_timer = settings.get('disable_refresh_timer', False)
                     self.enable_manufacturer_timing = settings.get('enable_manufacturer_timing', False)
                     self.enable_sleep_mode = settings.get('enable_sleep_mode', True)
+                    self.selected_image = settings.get('selected_image', None)
                     
-                    logger.info(f"Settings loaded from {settings_file} - Auto-display: {self.auto_display_uploads}, Crop mode: {self.image_crop_mode}, Orientation: {self.orientation}")
+                    logger.info(f"Settings loaded from {settings_file} - Auto-display: {self.auto_display_uploads}, Crop mode: {self.image_crop_mode}, Orientation: {self.orientation}, Selected image: {self.selected_image}")
                     logger.info(f"Timing settings - Startup timer: {'DISABLED' if self.disable_startup_timer else 'ENABLED'}, Refresh timer: {'DISABLED' if self.disable_refresh_timer else 'ENABLED'}")
                     logger.info(f"Timing values - Startup delay: {self.startup_delay_minutes}min, Refresh: {self.refresh_interval_hours}h")
             else:
@@ -306,6 +312,7 @@ class EinkDisplayHandler(FileSystemEventHandler):
                 self.disable_refresh_timer = False
                 self.enable_manufacturer_timing = False
                 self.enable_sleep_mode = True
+                self.selected_image = None
                 logger.info(f"Settings file not found at {settings_file}, using defaults")
         except Exception as e:
             logger.error(f"Error loading settings: {e}")
@@ -319,11 +326,38 @@ class EinkDisplayHandler(FileSystemEventHandler):
             self.disable_refresh_timer = False
             self.enable_manufacturer_timing = False
             self.enable_sleep_mode = True
+            self.selected_image = None
     
     def reload_settings(self):
         """Reload settings from file (useful when settings change)"""
         self.load_settings()
         logger.info(f"Settings reloaded - Auto-display: {self.auto_display_uploads}, Crop mode: {self.image_crop_mode}, Orientation: {self.orientation}")
+    
+    def save_selected_image_setting(self, filename):
+        """Save the selected image setting to the settings file"""
+        try:
+            # Use the same path as the upload server
+            settings_file = Path(os.path.expanduser('~/watched_files')) / '.settings.json'
+            logger.info(f"DEBUG: Saving selected image setting to: {settings_file.absolute()}")
+            
+            # Load existing settings
+            settings = {}
+            if settings_file.exists():
+                import json
+                with open(settings_file, 'r') as f:
+                    settings = json.load(f)
+            
+            # Update selected image
+            settings['selected_image'] = filename
+            
+            # Save settings back to file
+            with open(settings_file, 'w') as f:
+                json.dump(settings, f, indent=2)
+            
+            logger.info(f"Saved selected image setting: {filename}")
+            
+        except Exception as e:
+            logger.error(f"Error saving selected image setting: {e}")
     
     def apply_orientation(self, image):
         """Apply orientation transformation to an image based on current orientation setting"""
@@ -363,6 +397,40 @@ class EinkDisplayHandler(FileSystemEventHandler):
             return latest_file
         except Exception as e:
             logger.error(f"Error finding latest file: {e}")
+            return None
+    
+    def get_priority_display_file(self):
+        """Get the file that should be displayed based on priority logic"""
+        try:
+            logger.info(f"DEBUG: get_priority_display_file called, watched_folder: {self.watched_folder.absolute()}")
+            logger.info(f"DEBUG: selected_image: {self.selected_image}")
+            
+            # Priority 1: Selected image (if set and exists) - takes precedence over uploads
+            if self.selected_image:
+                selected_file = self.watched_folder / self.selected_image
+                logger.info(f"DEBUG: Looking for selected file at: {selected_file.absolute()}")
+                if selected_file.exists():
+                    logger.info(f"Priority: Selected image: {self.selected_image}")
+                    return selected_file
+                else:
+                    logger.warning(f"Selected image not found: {self.selected_image} - clearing invalid selection")
+                    logger.info(f"DEBUG: File does not exist at: {selected_file.absolute()}")
+                    # Clear the invalid selected image setting
+                    self.selected_image = None
+                    self.save_selected_image_setting(None)
+            
+            # Priority 2: Latest file (fallback)
+            latest_file = self.get_latest_file()
+            if latest_file:
+                logger.info(f"Priority: Latest file: {latest_file.name}")
+                return latest_file
+            
+            # Priority 4: None (will show welcome screen)
+            logger.info("Priority: No file to display (will show welcome screen)")
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error getting priority display file: {e}")
             return None
     
     def validate_file(self, file_path):
@@ -526,16 +594,15 @@ class EinkDisplayHandler(FileSystemEventHandler):
             logger.error(f"File validation failed: {file_path.name}")
             return
         
-        # Reload settings to get the latest auto-display setting
-        self.reload_settings()
-        
-        # Check if auto-display is enabled
+        # Check if auto-display is enabled (use current setting, don't reload)
         logger.info(f"Auto-display setting: {self.auto_display_uploads}")
         if self.auto_display_uploads:
             try:
+                # Set this as the current displayed file first
+                self.current_displayed_file = file_path
+                
                 success = self.display_file(file_path)
                 if success:
-                    self.current_displayed_file = file_path  # Track current displayed file
                     logger.info(f"Auto-displayed file: {file_path.name}")
                 elif self.enable_manufacturer_timing:
                     logger.warning(f"Display operation failed for {file_path.name} - likely due to timing restrictions")
@@ -554,20 +621,32 @@ class EinkDisplayHandler(FileSystemEventHandler):
     
     def display_file(self, file_path):
         """Convert and display file on e-ink display"""
-        file_ext = file_path.suffix.lower()
-        
+        # Use lock to prevent concurrent display operations
+        if not display_lock.acquire(timeout=5):  # Wait up to 5 seconds
+            logger.warning(f"Display lock timeout - skipping display of {file_path.name}")
+            return False
+            
         try:
+            logger.info(f"DEBUG: Starting display of {file_path.name}")
+            file_ext = file_path.suffix.lower()
+            
             if file_ext in ['.jpg', '.jpeg', '.png', '.bmp', '.gif']:
-                return self.display_image(file_path)
+                result = self.display_image(file_path)
             elif file_ext in ['.txt', '.md', '.py', '.js', '.html', '.css']:
-                return self.display_text_file(file_path)
+                result = self.display_text_file(file_path)
             elif file_ext == '.pdf':
-                return self.display_pdf(file_path)
+                result = self.display_pdf(file_path)
             else:
-                return self.display_file_info(file_path)
+                result = self.display_file_info(file_path)
+                
+            logger.info(f"DEBUG: Finished display of {file_path.name}, result: {result}")
+            return result
         except Exception as e:
             logger.error(f"Error in display_file for {file_path.name}: {e}")
             return False
+        finally:
+            display_lock.release()
+            logger.info(f"DEBUG: Released display lock for {file_path.name}")
     
     def retry_display_file(self, file_path):
         """Retry displaying a file after timing restrictions are met"""
@@ -1139,6 +1218,11 @@ Timing Features:
                 logger.info(f"Displaying initial file: {display_file_path}")
                 handler.display_file(display_file_path)
                 handler.current_displayed_file = display_file_path  # Track current displayed file
+                
+                # Set this file as the selected image so it persists
+                handler.selected_image = display_file_path.name
+                handler.save_selected_image_setting(display_file_path.name)
+                logger.info(f"Set {display_file_path.name} as selected image")
             else:
                 logger.error(f"Initial display file not found: {display_file_path}")
                 # Show error message on display
@@ -1149,18 +1233,31 @@ Timing Features:
                 draw.text((5, 50), f"File: {display_file_path.name}", font=handler.font_small, fill=handler.epd.BLACK)
                 handler.display_buffer(display_image)
         elif args.latest_file:
-            # Display the latest file in the watched folder
-            latest_file = handler.get_latest_file()
-            if latest_file:
-                logger.info(f"Displaying latest file: {latest_file}")
-                handler.display_file(latest_file)
-                handler.current_displayed_file = latest_file  # Track current displayed file
+            # Display the priority file in the watched folder
+            priority_file = handler.get_priority_display_file()
+            if priority_file:
+                logger.info(f"Displaying priority file: {priority_file}")
+                handler.display_file(priority_file)
+                handler.current_displayed_file = priority_file  # Track current displayed file
             else:
-                logger.info("No files found in watched folder, showing welcome screen")
+                logger.info("No priority file found, showing welcome screen")
                 handler.display_welcome_screen()
         else:
-            # Display welcome screen with IP address and web interface info
-            handler.display_welcome_screen()
+            # Check if startup timer is enabled
+            if not DISABLE_STARTUP_TIMER:
+                # Startup timer is enabled - show welcome screen, timer will handle priority file later
+                logger.info("Startup timer enabled - showing welcome screen, priority file will be displayed after delay")
+                handler.display_welcome_screen()
+            else:
+                # Startup timer is disabled - display priority file immediately
+                priority_file = handler.get_priority_display_file()
+                if priority_file:
+                    logger.info(f"Displaying priority file: {priority_file}")
+                    handler.display_file(priority_file)
+                    handler.current_displayed_file = priority_file  # Track current displayed file
+                else:
+                    logger.info("No priority file found, showing welcome screen")
+                    handler.display_welcome_screen()
         
         # Keep the script running until exit is requested
         if signal_handlers_registered:
