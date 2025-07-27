@@ -9,6 +9,7 @@ import signal
 import socket
 import subprocess
 import threading
+import json
 from pathlib import Path
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
@@ -467,6 +468,52 @@ class EinkDisplayHandler(FileSystemEventHandler):
         
         file_path = Path(event.src_path)
         logger.info(f"New file detected: {file_path.name}")
+        
+        # Check if this is a command file from the web interface
+        if file_path.name == '.display_command':
+            try:
+                # Read and execute the command
+                with open(file_path, 'r') as f:
+                    command_data = json.load(f)
+                
+                action = command_data.get('action')
+                filename = command_data.get('filename')
+                
+                logger.info(f"Received command: {action} for file: {filename}")
+                
+                if action == 'display_file' and filename:
+                    # Display the requested file
+                    target_file = self.watched_folder / filename
+                    if target_file.exists():
+                        logger.info(f"Executing display command for: {filename}")
+                        self.display_file(target_file)
+                        self.current_displayed_file = target_file
+                    else:
+                        logger.error(f"Command file not found: {filename}")
+                elif action == 'refresh_display':
+                    # Refresh the display with current priority file
+                    logger.info("Executing refresh display command")
+                    self.reload_settings()  # Reload settings first
+                    priority_file = self.get_priority_display_file()
+                    if priority_file:
+                        logger.info(f"Refreshing display with priority file: {priority_file.name}")
+                        self.display_file(priority_file)
+                        self.current_displayed_file = priority_file
+                    else:
+                        logger.info("No priority file found for refresh")
+                
+                # Clean up command file
+                file_path.unlink()
+                return
+                
+            except Exception as e:
+                logger.error(f"Error processing command file: {e}")
+                # Clean up command file even on error
+                try:
+                    file_path.unlink()
+                except:
+                    pass
+                return
         
         # Update timing variables
         self.last_file_update_time = time.time()

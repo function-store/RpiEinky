@@ -166,18 +166,18 @@ def trigger_settings_reload_and_redisplay():
         import time
         time.sleep(0.5)
         
-        # Find the most recent file to re-display with new settings
-        files = [f for f in os.listdir(UPLOAD_FOLDER) if os.path.isfile(os.path.join(UPLOAD_FOLDER, f)) and not f.startswith('.')]
-        if not files:
-            logger.info("No files found for re-display after settings change")
-            return False
+        # Send a refresh command to the main handler
+        command_file = Path(UPLOAD_FOLDER) / '.display_command'
+        command_data = {
+            'action': 'refresh_display',
+            'timestamp': time.time()
+        }
         
-        # Get the most recent file
-        files_with_time = [(f, os.path.getmtime(os.path.join(UPLOAD_FOLDER, f))) for f in files]
-        latest_file = max(files_with_time, key=lambda x: x[1])[0]
+        with open(command_file, 'w') as f:
+            json.dump(command_data, f)
         
-        logger.info(f"Re-displaying latest file '{latest_file}' with new settings")
-        return display_file_on_eink(latest_file)
+        logger.info("Sent refresh display command after settings change")
+        return True
         
     except Exception as e:
         logger.error(f"Error in trigger_settings_reload_and_redisplay: {e}")
@@ -186,35 +186,27 @@ def trigger_settings_reload_and_redisplay():
 def display_file_on_eink(filename):
     """Display a specific file on the e-ink display"""
     try:
-        # Import display handler
-        import sys
-        from pathlib import Path as PathlibPath
+        # Save the selected image setting
+        settings = load_settings()
+        settings['selected_image'] = filename
+        save_settings(settings)
         
-        # Add script directory to path to import display_latest
-        script_dir = PathlibPath(__file__).parent
-        sys.path.insert(0, str(script_dir))
+        # Write a display command for the main handler to execute
+        command_file = Path(UPLOAD_FOLDER) / '.display_command'
+        command_data = {
+            'action': 'display_file',
+            'filename': filename,
+            'timestamp': time.time()
+        }
         
-        from display_latest import EinkDisplayHandler
+        with open(command_file, 'w') as f:
+            json.dump(command_data, f)
         
-        # Get current settings
-        crop_mode = get_setting('image_crop_mode', 'center_crop')
-        
-        # Create handler and display file
-        handler = EinkDisplayHandler(clear_on_start=False, clear_on_exit=False)
-        handler.reload_settings()  # Reload settings to get latest values
-        file_path = PathlibPath(UPLOAD_FOLDER) / filename
-        
-        if not file_path.exists():
-            raise FileNotFoundError(f"File not found: {filename}")
-        
-        handler.display_file(file_path)
-        handler.cleanup(force_clear=False)  # Don't clear display after showing
-        
-        logger.info(f"Displayed file on e-ink: {filename} (crop mode: {crop_mode})")
+        logger.info(f"Sent display command for: {filename}")
         return True
         
     except Exception as e:
-        logger.error(f"Failed to display file {filename}: {e}")
+        logger.error(f"Failed to send display command for {filename}: {e}")
         return False
 
 @app.route('/upload', methods=['POST', 'PUT'])
