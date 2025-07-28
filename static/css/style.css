@@ -88,6 +88,18 @@ body {
     animation: none;
 }
 
+.polling-indicator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+}
+
+.polling-indicator i {
+    color: var(--primary-color);
+}
+
 @keyframes pulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.5; }

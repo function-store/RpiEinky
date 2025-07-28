@@ -230,6 +230,7 @@ pip install -r requirements.txt
 
 # Install Waveshare e-Paper library into virtual environment
 # ⚠️ IMPORTANT: Adjust these paths based on your actual library location and structure
+# And always consult with the actual device's manufacturer instructions first!
 
 # If you downloaded specific files (Option A):
 cp -r 2in15_e-Paper_G/RaspberryPi_JetsonNano/python/lib/waveshare_epd eink_env/lib/python3.*/site-packages/

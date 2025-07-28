@@ -19,6 +19,9 @@ class EinkDisplayManager {
         
         // Update currently displayed file periodically
         setInterval(() => this.loadCurrentlyDisplayedFile(), 5000); // Every 5 seconds
+        
+        // Poll for new files periodically (every 10 seconds)
+        setInterval(() => this.pollForNewFiles(), 10000);
     }
     
     bindEvents() {
@@ -35,7 +38,7 @@ class EinkDisplayManager {
         // Control buttons
         document.getElementById('clear-display').addEventListener('click', this.clearDisplay.bind(this));
         document.getElementById('clean-folder').addEventListener('click', this.cleanFolder.bind(this));
-        document.getElementById('refresh-files').addEventListener('click', this.loadFiles.bind(this));
+        document.getElementById('refresh-files').addEventListener('click', this.refreshFiles.bind(this));
         document.getElementById('select-multiple').addEventListener('click', this.toggleSelectionMode.bind(this));
         
         // Selection controls
@@ -116,11 +119,30 @@ class EinkDisplayManager {
             }
         }
         
-        this.hideUploadProgress();
-        
         if (uploadedCount > 0) {
             this.showToast(`Successfully uploaded ${uploadedCount} file(s)`, 'success');
-            setTimeout(() => this.loadFiles(), 1000); // Refresh file list
+            
+            // Wait a moment for the server to process the upload
+            setTimeout(async () => {
+                // Show progress for auto-display check
+                this.updateUploadProgress(90, 'Checking auto-display settings...');
+                
+                // First, refresh the file list to get the new files
+                await this.loadFiles();
+                
+                // Then force refresh the currently displayed file status
+                await this.forceRefreshDisplayedFile();
+                
+                // If auto-display is enabled, the latest uploaded file should now be displayed
+                // The server handles this automatically based on settings
+                this.updateUploadProgress(100, 'Upload complete!');
+                
+                setTimeout(() => {
+                    this.hideUploadProgress();
+                }, 500);
+            }, 1500); // Increased delay to ensure server has time to process
+        } else {
+            this.hideUploadProgress();
         }
     }
     
@@ -164,7 +186,7 @@ class EinkDisplayManager {
             
             this.files = data.files || [];
             
-            // Get currently displayed file info
+            // Get currently displayed file info and update the display
             await this.loadCurrentlyDisplayedFile();
             
             this.renderFiles();
@@ -176,12 +198,31 @@ class EinkDisplayManager {
         }
     }
     
+    async refreshFiles() {
+        try {
+            console.log('Manual refresh triggered');
+            await this.loadFiles();
+            await this.forceRefreshDisplayedFile();
+            this.showToast('Files refreshed', 'success');
+        } catch (error) {
+            console.error('Failed to refresh files:', error);
+            this.showToast('Failed to refresh files', 'error');
+        }
+    }
+    
     async loadCurrentlyDisplayedFile() {
         try {
             const response = await fetch('/displayed_file');
             if (response.ok) {
                 const data = await response.json();
+                const previousDisplayedFile = this.currentlyDisplayedFile;
                 this.currentlyDisplayedFile = data.filename;
+                
+                // If the displayed file changed, update the display
+                if (previousDisplayedFile !== this.currentlyDisplayedFile) {
+                    console.log(`Currently displayed file changed from ${previousDisplayedFile} to ${this.currentlyDisplayedFile}`);
+                    this.renderFiles(); // Refresh to update badges
+                }
             } else {
                 this.currentlyDisplayedFile = null;
             }
@@ -194,6 +235,81 @@ class EinkDisplayManager {
         this.updateCurrentlyDisplayedImage();
         
 
+    }
+    
+    async forceRefreshDisplayedFile() {
+        try {
+            const response = await fetch('/displayed_file');
+            if (response.ok) {
+                const data = await response.json();
+                this.currentlyDisplayedFile = data.filename;
+                console.log(`Force refreshed currently displayed file: ${this.currentlyDisplayedFile}`);
+                
+                // Always re-render to ensure badges are updated
+                this.renderFiles();
+                this.updateCurrentlyDisplayedImage();
+            } else {
+                this.currentlyDisplayedFile = null;
+                this.renderFiles();
+                this.updateCurrentlyDisplayedImage();
+            }
+        } catch (error) {
+            console.error('Failed to force refresh displayed file:', error);
+            this.currentlyDisplayedFile = null;
+            this.renderFiles();
+            this.updateCurrentlyDisplayedImage();
+        }
+    }
+    
+    async pollForNewFiles() {
+        try {
+            // Show polling indicator
+            const pollingIndicator = document.getElementById('polling-indicator');
+            pollingIndicator.style.display = 'flex';
+            
+            const response = await fetch('/api/files');
+            const data = await response.json();
+            
+            const newFiles = data.files || [];
+            const currentFileCount = this.files.length;
+            const newFileCount = newFiles.length;
+            
+            // Check if we have new files or if file list has changed
+            let filesChanged = false;
+            
+            if (newFileCount !== currentFileCount) {
+                filesChanged = true;
+            } else {
+                // Check if any files have been modified or if the list has changed
+                const currentFilenames = this.files.map(f => f.filename).sort();
+                const newFilenames = newFiles.map(f => f.filename).sort();
+                
+                if (JSON.stringify(currentFilenames) !== JSON.stringify(newFilenames)) {
+                    filesChanged = true;
+                }
+            }
+            
+            if (filesChanged) {
+                console.log(`File list changed, refreshing display...`);
+                this.files = newFiles;
+                this.renderFiles();
+                this.updateFileStats();
+                
+                // Also check currently displayed file in case it changed
+                await this.loadCurrentlyDisplayedFile();
+                
+                // Show notification if files were added
+                if (newFileCount > currentFileCount) {
+                    this.showToast(`Found ${newFileCount - currentFileCount} new file(s)`, 'info');
+                }
+            }
+        } catch (error) {
+            console.error('Failed to poll for new files:', error);
+        } finally {
+            // Hide polling indicator
+            const pollingIndicator = document.getElementById('polling-indicator');
+            pollingIndicator.style.display = 'none';
+        }
     }
     
     renderFiles() {
@@ -219,6 +335,11 @@ class EinkDisplayManager {
         const fileDate = new Date(file.modified * 1000).toLocaleDateString();
         const iconClass = this.getFileIconClass(file.type);
         const isCurrentlyDisplayed = this.currentlyDisplayedFile === file.filename;
+        
+        // Debug logging
+        if (isCurrentlyDisplayed) {
+            console.log(`File ${file.filename} is marked as currently displayed`);
+        }
         
         return `
             <div class="file-card ${this.selectionMode ? 'selection-mode' : ''} ${isCurrentlyDisplayed ? 'currently-displayed' : ''}" data-filename="${file.filename}">
@@ -344,10 +465,14 @@ class EinkDisplayManager {
                 this.showToast(`Displaying ${filename}...`, 'success');
                 
                 // Immediately update displayed file
-                await this.loadCurrentlyDisplayedFile(); // <-- Add this
+                this.currentlyDisplayedFile = filename;
+                this.updateCurrentlyDisplayedImage();
                 
-                // Keep existing refresh
+                // Refresh the file list to update the "currently displayed" badges
                 await this.loadFiles();
+            } else {
+                const error = await response.json();
+                throw new Error(error.error || 'Failed to display file');
             }
         } catch (error) {
             this.showToast(`Failed to display file: ${error}`, 'error');

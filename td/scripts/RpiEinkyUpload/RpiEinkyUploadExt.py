@@ -58,7 +58,7 @@ class RpiEinkyUploadExt:
 		"""Handle the Send parameter - upload current image"""
 		if hasattr(self.image, 'save'):
 			# Upload current image directly
-			self.upload_image_top(self.image)
+			self.saveImageToDisk(self.image)
 		else:
 			debug("No image available to upload")
 	
@@ -179,8 +179,8 @@ class RpiEinkyUploadExt:
 			debug(f"Status check error: {e}")
 			return False
 	
-	def upload_image_top(self, top_op):
-		"""Upload an image from a TOP operator"""
+	def saveImageToDisk(self, top_op):
+		"""Save an image from a TOP operator"""
 		try:
 			if not top_op:
 				debug("No TOP operator provided")
@@ -188,13 +188,13 @@ class RpiEinkyUploadExt:
 			
 			# Get temp file path
 			temp_file = self._get_temp_file_path("temp_eink_top")
+			debug(f"Saving {top_op} to {temp_file}")
 			
 			self.movieFileOut.par.file.expr = f'"{temp_file}" + me.fileSuffix'
 
 			# Save TOP to temp file
 			self.movieFileOut.par.addframe.pulse()
 
-			# TODO: wait for file to be saved
 			# saved_path = top_op.save(temp_file, asynchronous=True,createFolders=True, quality=0.9)
 			saved_path = Path(project.folder) / temp_file
 
@@ -239,17 +239,8 @@ class RpiEinkyUploadExt:
 				load=True, 
 				fileTypes=['jpg', 'png', 'txt', 'pdf', 'bmp', 'gif']
 			)
-			
-			self.movieFileIn.par.file.expr = f'"{filepath}"'
-			# save to temp folder
-			_out = self.ownerComp.op('null_img_send')
-			_newfile = _out.save(self._get_temp_file_path('temp.png'))
 
-			# if _newfile:
-			# 	return self.upload_file(_newfile)
-			# else:
-			# 	debug("No file selected")
-			# 	return False
+			self.upload_file(filepath)
 				
 		except Exception as e:
 			debug(f"File dialog error: {e}")
@@ -424,7 +415,7 @@ class RpiEinkyUploadExt:
 	def SendRenderTop(self, top_op):
 		"""Send a specific TOP to the display"""
 		if top_op:
-			return self.upload_image_top(top_op)
+			return self.saveImageToDisk(top_op)
 		else:
 			debug(f"TOP '{top_op}' not found")
 			return False

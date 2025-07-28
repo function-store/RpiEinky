@@ -162,6 +162,8 @@ def generate_thumbnail(filepath, filename):
 def trigger_settings_reload_and_redisplay():
     """Trigger a settings reload and re-display of current content when settings change"""
     try:
+        logger.info("Starting settings reload and redisplay process")
+        
         # Brief delay to ensure settings file is written
         import time
         time.sleep(0.5)
@@ -176,7 +178,7 @@ def trigger_settings_reload_and_redisplay():
         with open(command_file, 'w') as f:
             json.dump(command_data, f)
         
-        logger.info("Sent refresh display command after settings change")
+        logger.info(f"Sent refresh display command to {command_file}")
         return True
         
     except Exception as e:
@@ -189,7 +191,11 @@ def display_file_on_eink(filename):
         # Save the selected image setting
         settings = load_settings()
         settings['selected_image'] = filename
-        save_settings(settings)
+        save_success = save_settings(settings)
+        logger.info(f"Saved selected_image setting for {filename}: {save_success}")
+        
+        # Small delay to ensure settings file is written
+        time.sleep(0.1)
         
         # Write a display command for the main handler to execute
         command_file = Path(UPLOAD_FOLDER) / '.display_command'
@@ -238,6 +244,15 @@ def upload_file():
                 # Generate thumbnail if it's an image
                 generate_thumbnail(filepath, filename)
                 
+                # Check if auto-display is enabled and display the file
+                settings = load_settings()
+                if settings.get('auto_display_upload', True):
+                    logger.info(f"Auto-display enabled, displaying uploaded file: {filename}")
+                    success = display_file_on_eink(filename)
+                    logger.info(f"Auto-display result for {filename}: {success}")
+                else:
+                    logger.info(f"Auto-display disabled, not displaying uploaded file: {filename}")
+                
                 logger.info(f"File uploaded (POST): {filename}")
                 return jsonify({
                     'message': 'File uploaded successfully',
@@ -282,6 +297,15 @@ def upload_file():
             # Generate thumbnail if it's an image
             generate_thumbnail(filepath, filename)
             
+            # Check if auto-display is enabled and display the file
+            settings = load_settings()
+            if settings.get('auto_display_upload', True):
+                logger.info(f"Auto-display enabled, displaying uploaded file: {filename}")
+                success = display_file_on_eink(filename)
+                logger.info(f"Auto-display result for {filename}: {success}")
+            else:
+                logger.info(f"Auto-display disabled, not displaying uploaded file: {filename}")
+            
             logger.info(f"File uploaded (PUT): {filename}")
             return jsonify({
                 'message': 'File uploaded successfully',
@@ -317,6 +341,15 @@ def upload_text():
         
         # Generate thumbnail if applicable (text files don't get thumbnails)
         generate_thumbnail(filepath, filename)
+        
+        # Check if auto-display is enabled and display the file
+        settings = load_settings()
+        if settings.get('auto_display_upload', True):
+            logger.info(f"Auto-display enabled, displaying uploaded text file: {filename}")
+            success = display_file_on_eink(filename)
+            logger.info(f"Auto-display result for {filename}: {success}")
+        else:
+            logger.info(f"Auto-display disabled, not displaying uploaded text file: {filename}")
         
         logger.info(f"Text uploaded: {filename}")
         return jsonify({
@@ -371,6 +404,7 @@ def update_settings():
             
             # If orientation was changed, trigger a re-display of current content asynchronously
             if 'orientation' in data:
+                logger.info(f"Orientation changed to: {data['orientation']} - triggering refresh display")
                 try:
                     import threading
                     # Run re-display in background thread so web interface doesn't block
@@ -494,26 +528,33 @@ def get_displayed_file():
         settings = load_settings()
         selected_image = settings.get('selected_image')
         
+        logger.info(f"Displayed file check - selected_image: {selected_image}")
+        
         if selected_image:
             file_path = Path(UPLOAD_FOLDER) / selected_image
             if file_path.exists():
+                logger.info(f"Returning selected image as currently displayed: {selected_image}")
                 return jsonify({
                     'filename': selected_image,
                     'type': 'selected_image',
                     'exists': True
                 })
+            else:
+                logger.warning(f"Selected image file does not exist: {selected_image}")
         
         # Fallback to latest file
         files = [f for f in os.listdir(UPLOAD_FOLDER) if os.path.isfile(os.path.join(UPLOAD_FOLDER, f)) and not f.startswith('.')]
         if files:
             files_with_time = [(f, os.path.getmtime(os.path.join(UPLOAD_FOLDER, f))) for f in files]
             latest_file = max(files_with_time, key=lambda x: x[1])[0]
+            logger.info(f"Fallback to latest file as currently displayed: {latest_file}")
             return jsonify({
                 'filename': latest_file,
                 'type': 'latest_file',
                 'exists': True
             })
         
+        logger.info("No files found, returning null")
         return jsonify({
             'filename': None,
             'type': 'none',

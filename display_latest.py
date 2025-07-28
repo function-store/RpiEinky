@@ -145,6 +145,7 @@ class EinkDisplayHandler(FileSystemEventHandler):
         self.last_file_update_time = time.time()
         self.last_refresh_time = time.time()
         self.current_displayed_file = None
+        self.last_welcome_screen_time = 0  # Track when welcome screen was last shown
         
         # Startup timer control
         self.startup_timer_active = True
@@ -190,6 +191,7 @@ class EinkDisplayHandler(FileSystemEventHandler):
         logger.info(f"Auto-display uploads: {self.auto_display_uploads}")
         logger.info(f"Manufacturer timing requirements: {'ENABLED' if self.enable_manufacturer_timing else 'DISABLED'}")
         logger.info(f"Sleep mode: {'ENABLED' if self.enable_sleep_mode else 'DISABLED'}")
+        logger.info(f"Display dimensions - Width: {self.epd.landscape_width}, Height: {self.epd.landscape_height}")
     
 
     
@@ -301,6 +303,7 @@ class EinkDisplayHandler(FileSystemEventHandler):
                     
                     # Load orientation setting
                     self.orientation = settings.get('orientation', 'landscape')
+                    logger.info(f"Loaded orientation setting: {self.orientation}")
                     
                     # Load timing settings
                     self.startup_delay_minutes = settings.get('startup_delay_minutes', 1)
@@ -376,19 +379,28 @@ class EinkDisplayHandler(FileSystemEventHandler):
         """Apply orientation transformation to an image based on current orientation setting"""
         try:
             orientation = getattr(self, 'orientation', 'landscape')
+            logger.info(f"Applying orientation: {orientation} to image size {image.size}")
             
             if orientation == 'landscape':
                 # No rotation needed
+                logger.info(f"No rotation needed for landscape orientation")
                 return image
             elif orientation == 'landscape_flipped':
                 # Rotate 180 degrees
+                logger.info(f"Rotating image 180 degrees for landscape_flipped")
                 return image.rotate(180)
             elif orientation == 'portrait':
                 # Rotate 90 degrees clockwise
-                return image.rotate(90, expand=True)
+                logger.info(f"Rotating image 90 degrees clockwise for portrait")
+                rotated = image.rotate(90, expand=True)
+                logger.info(f"Image rotated from {image.size} to {rotated.size}")
+                return rotated
             elif orientation == 'portrait_flipped':
                 # Rotate 270 degrees clockwise (or 90 degrees counter-clockwise)
-                return image.rotate(270, expand=True)
+                logger.info(f"Rotating image 270 degrees clockwise for portrait_flipped")
+                rotated = image.rotate(270, expand=True)
+                logger.info(f"Image rotated from {image.size} to {rotated.size}")
+                return rotated
             else:
                 # Unknown orientation, return original
                 logger.warning(f"Unknown orientation: {orientation}, using landscape")
@@ -493,8 +505,12 @@ class EinkDisplayHandler(FileSystemEventHandler):
             # Wake display from sleep mode if sleep mode is enabled
             if self.enable_sleep_mode:
                 logger.info("Starting display operation - waking display from sleep...")
-                self.epd.init()
-                time.sleep(0.5)  # Brief delay after wake
+                try:
+                    self.epd.init()
+                    time.sleep(0.5)  # Brief delay after wake
+                except Exception as e:
+                    logger.warning(f"Display init failed, attempting reinitialization: {e}")
+                    self.reinitialize_display()
             else:
                 logger.info("Starting display operation (sleep mode disabled)...")
             
@@ -507,7 +523,10 @@ class EinkDisplayHandler(FileSystemEventHandler):
             # Put display back to sleep mode if sleep mode is enabled
             if self.enable_sleep_mode:
                 logger.info("Display completed - putting display to sleep...")
-                self.epd.sleep()
+                try:
+                    self.epd.sleep()
+                except Exception as e:
+                    logger.warning(f"Display sleep failed: {e}")
             else:
                 logger.info("Display completed (sleep mode disabled)")
             
@@ -520,28 +539,54 @@ class EinkDisplayHandler(FileSystemEventHandler):
             
         except Exception as e:
             logger.error(f"Display buffer error: {e}")
-            if "Bad file descriptor" in str(e):
-                logger.info("Attempting to reinitialize display...")
-                self.reinitialize_display()
-                # Try again after reinitializing
-                # Apply orientation again after reinitialization
-                image = self.apply_orientation(image)
-                self.epd.display(self.epd.getbuffer(image))
-                if self.enable_sleep_mode:
-                    self.epd.sleep()  # Put to sleep after successful retry
-                return True
+            if "Bad file descriptor" in str(e) or "I/O error" in str(e):
+                logger.info("File descriptor error detected - attempting to reinitialize display...")
+                try:
+                    self.reinitialize_display()
+                    # Try again after reinitializing
+                    # Apply orientation again after reinitialization
+                    image = self.apply_orientation(image)
+                    self.epd.display(self.epd.getbuffer(image))
+                    if self.enable_sleep_mode:
+                        try:
+                            self.epd.sleep()  # Put to sleep after successful retry
+                        except Exception as sleep_error:
+                            logger.warning(f"Sleep after retry failed: {sleep_error}")
+                    logger.info("Display operation completed successfully after reinitialization")
+                    return True
+                except Exception as retry_error:
+                    logger.error(f"Reinitialization and retry failed: {retry_error}")
+                    return False
             return False
     
     def reinitialize_display(self):
         """Reinitialize the e-ink display"""
         try:
             logger.info("Reinitializing e-ink display...")
-            self.epd.sleep()
-            time.sleep(1)
-            self.epd.init()
-            logger.info("Display reinitialized successfully")
+            
+            # Try to sleep first (if it fails, that's okay)
+            try:
+                self.epd.sleep()
+            except Exception as e:
+                logger.warning(f"Sleep during reinitialization failed: {e}")
+            
+            # Wait a bit longer to ensure clean state
+            time.sleep(2)
+            
+            # Reinitialize the display
+            try:
+                self.epd.init()
+                logger.info("Display reinitialized successfully")
+            except Exception as e:
+                logger.error(f"Display init failed during reinitialization: {e}")
+                # Try one more time after a longer delay
+                time.sleep(3)
+                self.epd.init()
+                logger.info("Display reinitialized successfully on second attempt")
+                
         except Exception as e:
             logger.error(f"Display reinitialization failed: {e}")
+            raise
     
     def on_created(self, event):
         if event.is_directory:
@@ -608,21 +653,23 @@ class EinkDisplayHandler(FileSystemEventHandler):
                 # Refresh the display with current priority file
                 logger.info("Executing refresh display command")
                 
-                # During startup, just reload settings without forcing a display refresh
-                if self.startup_timer_active:
-                    logger.info("Settings change detected during startup - reloading settings without display refresh")
-                    self.reload_settings()  # Still reload settings for future use
-                    return
+                # Always reload settings first
+                self.reload_settings()
                 
-                # Normal refresh behavior (outside startup)
-                self.reload_settings()  # Reload settings first
+                # During startup, still refresh display if this is an orientation change
+                # (orientation changes should always trigger immediate refresh)
+                if self.startup_timer_active:
+                    logger.info("Settings change detected during startup - reloading settings and refreshing display")
+                
+                # Get and display the priority file
                 priority_file = self.get_priority_display_file()
                 if priority_file:
                     logger.info(f"Refreshing display with priority file: {priority_file.name}")
                     self.display_file(priority_file)
                     self.current_displayed_file = priority_file
                 else:
-                    logger.info("No priority file found for refresh")
+                    logger.info("No priority file found for refresh - showing welcome screen")
+                    self.display_welcome_screen()
             elif action == 'clear_display':
                 # Clear the display
                 logger.info("Executing clear display command")
@@ -740,6 +787,7 @@ class EinkDisplayHandler(FileSystemEventHandler):
             # Open and process image
             image = Image.open(file_path)
             original_size = image.size
+            logger.info(f"Displaying image: {file_path.name}, original size: {original_size}")
 
                 
             # Convert to RGB if necessary, using white background for transparency
@@ -755,19 +803,23 @@ class EinkDisplayHandler(FileSystemEventHandler):
 
             # Apply orientation
             image = self.apply_orientation(image)
+            logger.info(f"After orientation: {image.size}")
 
             # Resize and crop to fit display
             processed_image = self.resize_image_to_fit(image)
+            logger.info(f"After resize: {processed_image.size}")
             
             # If the processed image is exactly display size, use it directly
             if processed_image.size == (self.epd.landscape_width, self.epd.landscape_height):
                 display_image = processed_image
+                logger.info(f"Using processed image directly: {display_image.size}")
             else:
                 # Create display image and center the processed image
                 display_image = Image.new('RGB', (self.epd.landscape_width, self.epd.landscape_height), self.epd.WHITE)
                 x_offset = (self.epd.landscape_width - processed_image.width) // 2
                 y_offset = (self.epd.landscape_height - processed_image.height) // 2
                 display_image.paste(processed_image, (x_offset, y_offset))
+                logger.info(f"Created display image: {display_image.size}, offset: ({x_offset}, {y_offset})")
             
             success = self.display_buffer(display_image)
             if success:
@@ -1046,6 +1098,14 @@ class EinkDisplayHandler(FileSystemEventHandler):
     def display_welcome_screen(self):
         """Display welcome screen with IP address and web interface information"""
         try:
+            # Check if we've shown the welcome screen recently (cooldown of 30 seconds)
+            current_time = time.time()
+            if current_time - self.last_welcome_screen_time < 30:
+                logger.info("Welcome screen shown recently, skipping to avoid file descriptor issues")
+                return
+            
+            self.last_welcome_screen_time = current_time
+            
             ip_address = get_ip_address()
             hostname = socket.gethostname()
             
@@ -1090,60 +1150,48 @@ class EinkDisplayHandler(FileSystemEventHandler):
     
     def resize_image_to_fit(self, image):
         """Resize image to fit display while maintaining aspect ratio, with configurable crop mode"""
-        display_width = self.epd.landscape_height
-        display_height = self.epd.landscape_width
+        display_width = self.epd.landscape_width
+        display_height = self.epd.landscape_height
         
-        # If image is smaller than display in both dimensions, scale up to fit
-        if image.width <= display_height and image.height <= display_width:
-            # Calculate scaling factor to fit within display
-            scale_x = display_height / image.width
-            scale_y = display_width / image.height
-            scale = min(scale_x, scale_y)
+        # Use the loaded crop mode setting
+        crop_mode = getattr(self, 'image_crop_mode', 'center_crop')
+        logger.info(f"Resizing image {image.size} to display {display_width}x{display_height} with crop mode: {crop_mode}")
+        
+        if crop_mode == 'center_crop':
+            # Center-crop mode: scale to cover display, then crop (works for both smaller and larger images)
+            scale_x = display_width / image.width
+            scale_y = display_height / image.height
+            scale = max(scale_x, scale_y)  # Use max to ensure image covers display
+            
+            # Resize image to cover display
+            new_width = int(image.width * scale)
+            new_height = int(image.height * scale)
+            resized_image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            
+            # Center-crop to exact display size
+            left = (new_width - display_width) // 2
+            top = (new_height - display_height) // 2
+            right = left + display_width
+            bottom = top + display_height
+            
+            cropped_image = resized_image.crop((left, top, right, bottom))
+            
+            logger.info(f"Center-cropped image from {image.size} to {cropped_image.size} (scale: {scale:.2f})")
+            return cropped_image
+            
+        else:  # fit_with_letterbox
+            # Letterbox mode: scale to fit within display, add letterboxing
+            scale_x = display_width / image.width
+            scale_y = display_height / image.height
+            scale = min(scale_x, scale_y)  # Use min to fit within display
             
             new_width = int(image.width * scale)
             new_height = int(image.height * scale)
             
-            return image.resize((new_width, new_height), Image.Resampling.LANCZOS)
-        
-        # If image is larger than display in any dimension, handle based on crop mode
-        else:
-            # Use the loaded crop mode setting
-            crop_mode = getattr(self, 'image_crop_mode', 'center_crop')
-            if crop_mode == 'center_crop':
-                # Center-crop mode: scale to cover display, then crop
-                scale_x = display_height / image.width
-                scale_y = display_width / image.height
-                scale = max(scale_x, scale_y)  # Use max to ensure image covers display
-                
-                # Resize image to cover display
-                new_width = int(image.width * scale)
-                new_height = int(image.height * scale)
-                resized_image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
-                
-                # Center-crop to exact display size
-                left = (new_width - display_height) // 2
-                top = (new_height - display_width) // 2
-                right = left + display_height
-                bottom = top + display_width
-                
-                cropped_image = resized_image.crop((left, top, right, bottom))
-                
-                logger.info(f"Center-cropped image from {image.size} to {cropped_image.size}")
-                return cropped_image
-                
-            else:  # fit_with_letterbox
-                # Letterbox mode: scale to fit within display, add letterboxing
-                scale_x = display_height / image.width
-                scale_y = display_width / image.height
-                scale = min(scale_x, scale_y)  # Use min to fit within display
-                
-                new_width = int(image.width * scale)
-                new_height = int(image.height * scale)
-                
-                resized_image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
-                
-                logger.info(f"Letterboxed image from {image.size} to {resized_image.size}")
-                return resized_image
+            resized_image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            
+            logger.info(f"Letterboxed image from {image.size} to {resized_image.size} (scale: {scale:.2f})")
+            return resized_image
     
     def cleanup(self, force_clear=None):
         """Clean up resources"""
@@ -1204,8 +1252,10 @@ Timing Features:
                        help='Do not clear screen on exit')
     parser.add_argument('--clear-start', action='store_true',
                        help='Clear screen on start')
+    parser.add_argument('--test-orientation', choices=['landscape', 'landscape_flipped', 'portrait', 'portrait_flipped'],
+                        help='Test orientation by displaying a test image immediately and exiting')
     parser.add_argument('--orientation', choices=['landscape', 'landscape_flipped', 'portrait', 'portrait_flipped'],
-                       default='landscape', help='Display orientation (default: landscape)')
+                        default='landscape', help='Display orientation (default: landscape)')
     parser.add_argument('--disable-startup-timer', action='store_true',
                        help='Disable automatic startup display timer')
     parser.add_argument('--disable-refresh-timer', action='store_true',
@@ -1239,6 +1289,43 @@ Timing Features:
             return
         except Exception as e:
             logger.error(f"Error displaying IP address: {e}")
+            return
+    
+    # Test orientation if requested
+    if args.test_orientation:
+        logger.info(f"Testing orientation: {args.test_orientation}")
+        try:
+            # Create temporary handler just to test orientation
+            temp_handler = EinkDisplayHandler(clear_on_start=False, clear_on_exit=False, display_type=display_type)
+            temp_handler.orientation = args.test_orientation
+            
+            # Create a test image with orientation indicators
+            test_image = Image.new('RGB', (temp_handler.epd.landscape_width, temp_handler.epd.landscape_height), (255, 255, 255))
+            draw = ImageDraw.Draw(test_image)
+            
+            # Draw orientation test pattern
+            draw.rectangle([0, 0, test_image.width-1, test_image.height-1], outline=(0, 0, 0), width=5)
+            draw.text((10, 10), f"Orientation: {args.test_orientation}", font=temp_handler.font_large, fill=(0, 0, 0))
+            draw.text((10, 40), f"Display: {test_image.width}x{test_image.height}", font=temp_handler.font_medium, fill=(0, 0, 0))
+            
+            # Draw corner markers
+            draw.rectangle([10, 10, 50, 50], fill=(255, 0, 0))  # Top-left: Red
+            draw.rectangle([test_image.width-50, 10, test_image.width-10, 50], fill=(0, 255, 0))  # Top-right: Green
+            draw.rectangle([10, test_image.height-50, 50, test_image.height-10], fill=(0, 0, 255))  # Bottom-left: Blue
+            draw.rectangle([test_image.width-50, test_image.height-50, test_image.width-10, test_image.height-10], fill=(255, 255, 0))  # Bottom-right: Yellow
+            
+            # Apply orientation
+            oriented_image = temp_handler.apply_orientation(test_image)
+            
+            # Display the test image
+            temp_handler.display_buffer(oriented_image)
+            
+            # Clean up
+            temp_handler.epd.sleep()
+            logger.info(f"Orientation test completed for: {args.test_orientation}. Exiting.")
+            return
+        except Exception as e:
+            logger.error(f"Error testing orientation: {e}")
             return
     
     # Configuration
