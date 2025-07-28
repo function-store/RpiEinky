@@ -4,7 +4,20 @@
 # Provides easy commands for managing the system without requiring reboots
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VENV_PATH="$HOME/eink_env"
+
+# Detect virtual environment location
+if [ -d "$SCRIPT_DIR/eink_env" ]; then
+    VENV_PATH="$SCRIPT_DIR/eink_env"
+    echo "Found venv in project folder: $VENV_PATH"
+elif [ -d "$HOME/eink_env" ]; then
+    VENV_PATH="$HOME/eink_env"
+    echo "Found venv in home directory: $VENV_PATH"
+else
+    echo "❌ Virtual environment not found in $SCRIPT_DIR/eink_env or $HOME/eink_env"
+    echo "Please create it first with: python3 -m venv eink_env"
+    exit 1
+fi
+
 SERVICE_NAME="eink-display.service"
 DISPLAY_PID_FILE="/tmp/eink_display.pid"
 SERVER_PID_FILE="/tmp/eink_server.pid"
@@ -253,7 +266,7 @@ show_status() {
     
     # Check virtual environment
     if [ -d "$VENV_PATH" ]; then
-        echo -e "${GREEN}✅ Virtual Environment: Available${NC}"
+        echo -e "${GREEN}✅ Virtual Environment: Available at $VENV_PATH${NC}"
     else
         echo -e "${RED}❌ Virtual Environment: Not Found${NC}"
     fi

@@ -95,11 +95,12 @@ def signal_handler_clear_exit(signum, frame):
     # Clean up display before exiting (if not disabled)
     if CLEAR_ON_EXIT:
         try:
-            # Import and initialize EPD for cleanup
-            from waveshare_epd import epd2in15g
-            epd = epd2in15g.EPD()
+            # Import and initialize EPD for cleanup using unified system
+            from unified_epd_adapter import UnifiedEPD, EPDConfig
+            display_type = EPDConfig.load_display_config()
+            epd = UnifiedEPD.create_display(display_type)
             epd.init()
-            epd.Clear()
+            epd.clear()
             epd.sleep()
             print("🖥️  Display cleared and put to sleep")
         except Exception as e:
@@ -107,8 +108,9 @@ def signal_handler_clear_exit(signum, frame):
     else:
         try:
             # Just put display to sleep without clearing
-            from waveshare_epd import epd2in15g
-            epd = epd2in15g.EPD()
+            from unified_epd_adapter import UnifiedEPD, EPDConfig
+            display_type = EPDConfig.load_display_config()
+            epd = UnifiedEPD.create_display(display_type)
             epd.init()
             epd.sleep()
             print("🖥️  Display put to sleep (not cleared)")

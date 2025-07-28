@@ -100,6 +100,45 @@ class EPDAdapter(ABC):
     def YELLOW(self) -> int:
         """Yellow color value"""
         pass
+    
+    # Orientation-aware properties
+    @property
+    def native_orientation(self) -> str:
+        """Get native orientation of the display"""
+        # This will be overridden in concrete adapters
+        return "landscape"
+    
+    @property
+    def landscape_width(self) -> int:
+        """Width when display is in landscape orientation"""
+        if self.native_orientation == "landscape":
+            return self.width
+        else:
+            return self.height
+    
+    @property 
+    def landscape_height(self) -> int:
+        """Height when display is in landscape orientation"""
+        if self.native_orientation == "landscape":
+            return self.height
+        else:
+            return self.width
+    
+    @property
+    def portrait_width(self) -> int:
+        """Width when display is in portrait orientation"""
+        if self.native_orientation == "portrait":
+            return self.width
+        else:
+            return self.height
+    
+    @property
+    def portrait_height(self) -> int:
+        """Height when display is in portrait orientation"""
+        if self.native_orientation == "portrait":
+            return self.height
+        else:
+            return self.width
 
 
 class EPD2in15gAdapter(EPDAdapter):
@@ -159,6 +198,10 @@ class EPD2in15gAdapter(EPDAdapter):
     @property
     def YELLOW(self) -> int:
         return self._epd.YELLOW
+    
+    @property
+    def native_orientation(self) -> str:
+        return "portrait"
 
 
 class EPD13in3EAdapter(EPDAdapter):
@@ -218,6 +261,10 @@ class EPD13in3EAdapter(EPDAdapter):
     @property
     def YELLOW(self) -> int:
         return self._epd.YELLOW
+    
+    @property
+    def native_orientation(self) -> str:
+        return "landscape"
 
 
 class EPD7in3eAdapter(EPDAdapter):
@@ -277,6 +324,10 @@ class EPD7in3eAdapter(EPDAdapter):
     @property
     def YELLOW(self) -> int:
         return self._epd.YELLOW
+    
+    @property
+    def native_orientation(self) -> str:
+        return "landscape"
 
 
 class UnifiedEPD:
@@ -288,19 +339,22 @@ class UnifiedEPD:
             "class": EPD2in15gAdapter,
             "name": "2.15\" Grayscale Display",
             "resolution": (160, 296),
-            "colors": "4-color grayscale"
+            "colors": "4-color grayscale",
+            "native_orientation": "portrait"  # 160x296 - taller than wide
         },
         "epd13in3E": {
             "class": EPD13in3EAdapter,
             "name": "13.3\" Color Display", 
             "resolution": (1200, 1600),
-            "colors": "7-color"
+            "colors": "7-color",
+            "native_orientation": "portrait"  # 1200x1600 - taller than wide
         },
         "epd7in3e": {
             "class": EPD7in3eAdapter,
             "name": "7.3\" Color Display",
             "resolution": (800, 480),
-            "colors": "7-color"
+            "colors": "7-color",
+            "native_orientation": "landscape"  # 800x480 - wider than tall
         }
     }
     
@@ -358,6 +412,38 @@ class UnifiedEPD:
             width, height = config['resolution']
             return width * height
         return None
+    
+    @classmethod
+    def get_landscape_dimensions(cls, display_type: str) -> Optional[tuple]:
+        """Get landscape dimensions (width, height) for a display type"""
+        config = cls.DISPLAY_CONFIGS.get(display_type)
+        if config:
+            width, height = config['resolution']
+            native_orientation = config.get('native_orientation', 'landscape')
+            if native_orientation == 'landscape':
+                return (width, height)  # Already landscape
+            else:
+                return (height, width)  # Swap for portrait-native displays
+        return None
+    
+    @classmethod
+    def get_portrait_dimensions(cls, display_type: str) -> Optional[tuple]:
+        """Get portrait dimensions (width, height) for a display type"""
+        config = cls.DISPLAY_CONFIGS.get(display_type)
+        if config:
+            width, height = config['resolution']
+            native_orientation = config.get('native_orientation', 'landscape')
+            if native_orientation == 'portrait':
+                return (width, height)  # Already portrait
+            else:
+                return (height, width)  # Swap for landscape-native displays
+        return None
+    
+    @classmethod
+    def get_native_orientation(cls, display_type: str) -> Optional[str]:
+        """Get native orientation for a display type"""
+        config = cls.DISPLAY_CONFIGS.get(display_type)
+        return config.get('native_orientation') if config else None
 
 
 # Backward compatibility wrapper for existing code
@@ -416,10 +502,22 @@ class EPDConfig:
         Returns:
             Display type string
         """
-        config_file = os.path.expanduser("~/watched_files/.epd_config.json")
+        # Try multiple possible locations for config file
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        config_locations = [
+            os.path.join(script_dir, '.epd_config.json'),  # Same directory as script
+            os.path.expanduser("~/watched_files/.epd_config.json"),  # Original location
+            os.path.expanduser("~/.epd_config.json"),  # Home directory
+        ]
+        
+        config_file = None
+        for location in config_locations:
+            if os.path.exists(location):
+                config_file = location
+                break
         
         try:
-            if os.path.exists(config_file):
+            if config_file:
                 import json
                 with open(config_file, 'r') as f:
                     config = json.load(f)
@@ -441,7 +539,9 @@ class EPDConfig:
         Args:
             display_type: Type of display to save
         """
-        config_file = os.path.expanduser("~/watched_files/.epd_config.json")
+        # Save to same directory as script by default
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        config_file = os.path.join(script_dir, '.epd_config.json')
         
         try:
             import json
@@ -504,15 +604,16 @@ if __name__ == "__main__":
         epd3 = UnifiedEPD.create_display("epd7in3e")
         print(f"  Created: {epd3.width}x{epd3.height}")
         
-                    print("All tests passed!")
-            
-            # Test utility methods
-            print("\nTesting utility methods...")
-            for display_type in ["epd2in15g", "epd13in3E", "epd7in3e"]:
-                resolution = UnifiedEPD.get_display_resolution(display_type)
-                pixel_count = UnifiedEPD.get_display_pixel_count(display_type)
-                print(f"  {display_type}: {resolution} = {pixel_count:,} pixels")
-            
-        except Exception as e:
-            print(f"Test failed: {e}")
-            print("This is expected if the display modules are not available in the current environment.") 
+        print("All tests passed!")
+        
+        # Test utility methods
+        print("\nTesting utility methods...")
+        for display_type in ["epd2in15g", "epd13in3E", "epd7in3e"]:
+            resolution = UnifiedEPD.get_display_resolution(display_type)
+            pixel_count = UnifiedEPD.get_display_pixel_count(display_type)
+            print(f"  {display_type}: {resolution} = {pixel_count:,} pixels")
+        
+    except Exception as e:
+        print(f"Test failed: {e}")
+        print("This is expected if the display modules are not available in the current environment.") 
+        

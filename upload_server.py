@@ -528,13 +528,18 @@ def get_displayed_file():
 def clear_screen():
     """Clear the e-ink display screen (without removing files)"""
     try:
-        # Import and initialize EPD for clearing
-        from waveshare_epd import epd2in15g
+        # Send clear command to the main display handler instead of direct EPD access
+        command_file = Path(UPLOAD_FOLDER) / '.display_command'
+        command_data = {
+            'action': 'clear_display',
+            'timestamp': time.time()
+        }
         
-        epd = epd2in15g.EPD()
-        epd.init()
-        epd.Clear()
-        epd.sleep()
+        with open(command_file, 'w') as f:
+            json.dump(command_data, f)
+        
+        # Wait a moment for the command to be processed
+        time.sleep(1)
         
         logger.info("E-ink display screen cleared")
         return jsonify({

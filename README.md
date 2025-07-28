@@ -1,6 +1,6 @@
 # E-Ink File Display System
 
-A comprehensive e-ink display management system with both file monitoring and **web interface** for the Waveshare 2.15" e-paper display. Features a modern web UI for drag-and-drop uploads, file gallery with thumbnails, and complete remote management of your e-ink display.
+A comprehensive e-ink display management system with both file monitoring and **web interface** supporting multiple Waveshare e-paper displays. Features a modern web UI for drag-and-drop uploads, file gallery with thumbnails, and complete remote management of your e-ink display with automatic orientation handling.
 
 ## 🎯 Features
 
@@ -37,8 +37,9 @@ A comprehensive e-ink display management system with both file monitoring and **
   - **Text files** (txt, md, py, js, html, css): Full content with word wrapping
   - **PDFs**: First page converted to image (requires pdf2image)
   - **Other files**: File information display (name, size, type, date)
-- **4-color e-ink display** - Uses white, black, red, and yellow colors
-- **Display orientation control** - Normal or upside-down orientation
+- **Multi-display support** - Supports 4-color grayscale and 7-color displays with automatic orientation handling
+- **Automatic orientation handling** - Seamlessly works with portrait-native (2.15") and landscape-native (7.3",13.3") displays
+- **Display orientation control** - Normal or upside-down orientation for all supported displays
 - **Robust error handling** - Visual error messages on display
 - **Clean shutdown** - Properly cleans display on exit (configurable)
 - **File management API** - List files, get latest file info, cleanup old files
@@ -145,8 +146,14 @@ The system supports multiple e-paper display models through the unified display 
 
 #### **Currently Supported:**
 - **Waveshare 2.15" e-paper display (4-color grayscale)** - `epd2in15g`
+  - Resolution: 160×296 pixels (47,360 total pixels)
+  - Native orientation: Portrait
 - **Waveshare 13.3" e-paper display (7-color)** - `epd13in3E`
+  - Resolution: 1200×1600 pixels (1,920,000 total pixels)
+  - Native orientation: Landscape
 - **Waveshare 7.3" e-paper display (7-color)** - `epd7in3e`
+  - Resolution: 800×480 pixels (384,000 total pixels)
+  - Native orientation: Landscape
 
 #### **Display Configuration:**
 The display type is automatically detected from the configuration file `~/watched_files/.epd_config.json`:
@@ -156,6 +163,13 @@ The display type is automatically detected from the configuration file `~/watche
   "display_type": "epd2in15g"
 }
 ```
+
+#### **Automatic Orientation Handling:**
+The system automatically handles different native orientations:
+- **Portrait-native displays** (2.15", 13.3"): System automatically converts to landscape for consistent UI
+- **Landscape-native displays** (7.3"): Used directly without conversion
+- **Seamless switching**: Change display types without code modifications
+- **Consistent experience**: All displays show content in landscape orientation regardless of native orientation
 
 #### **Adding New Display Support:**
 To add support for additional display models, see the [Unified Display System Documentation](README_UNIFIED_DISPLAY.md).
@@ -1150,6 +1164,36 @@ sudo raspi-config nonint do_spi 0
 sudo reboot
 ```
 
+### Display Type Issues
+
+**Problem:** Display not working after switching display types
+
+**Solution:** Check display configuration and restart system:
+```bash
+# Check current config
+cat ~/watched_files/.epd_config.json
+
+# Update to correct display type
+echo '{"display_type": "epd7in3e"}' > ~/watched_files/.epd_config.json
+
+# Restart the system
+./restart_eink_system.sh
+```
+
+**Problem:** Images appear rotated or incorrectly sized
+
+**Solution:** The system automatically handles orientation - verify correct display type:
+```bash
+# For 2.15" grayscale display (portrait native)
+echo '{"display_type": "epd2in15g"}' > ~/watched_files/.epd_config.json
+
+# For 7.3" color display (landscape native)  
+echo '{"display_type": "epd7in3e"}' > ~/watched_files/.epd_config.json
+
+# For 13.3" color display (portrait native)
+echo '{"display_type": "epd13in3E"}' > ~/watched_files/.epd_config.json
+```
+
 ### GPIO Module Issues
 
 **Problem:** `ModuleNotFoundError: No module named 'gpiozero'`
@@ -1405,8 +1449,9 @@ python show_ip.py
 python display_latest.py
 
 # Use specific display type (overrides config file)
-python display_latest.py --display-type epd13in3E
-python display_latest.py --display-type epd7in3e
+python display_latest.py --display-type epd2in15g    # 2.15" grayscale display
+python display_latest.py --display-type epd13in3E    # 13.3" color display  
+python display_latest.py --display-type epd7in3e     # 7.3" color display
 
 # Show a welcome image immediately, then monitor for new files (also sets it as selected image)
 python display_latest.py --display-file ~/Pictures/welcome.jpg
@@ -1446,6 +1491,22 @@ python display_latest.py \
   --refresh-interval 12 \
   --enable-manufacturer-timing \
   --disable-sleep-mode
+
+### Display Type Switching
+
+```bash
+# Change display type by updating config file
+echo '{"display_type": "epd7in3e"}' > ~/watched_files/.epd_config.json
+
+# Or use command line override (temporary)
+python display_latest.py --display-type epd7in3e
+
+# System will automatically:
+# - Handle orientation differences (portrait vs landscape native)  
+# - Adjust image processing for different resolutions
+# - Use appropriate color palettes (grayscale vs 7-color)
+# - Maintain consistent landscape UI experience
+```
 
 ### Web Interface Examples
 

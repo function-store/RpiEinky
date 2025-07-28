@@ -18,7 +18,7 @@ libdir = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__)
 if os.path.exists(libdir):
     sys.path.append(libdir)
 
-from waveshare_epd import epd2in15g
+# EPD import moved to inside function to use unified system
 
 def get_ip_address():
     """Get the device's IP address"""
@@ -97,13 +97,15 @@ def main():
         print(f"🏠 Hostname: {hostname}")
         print("📺 Displaying on e-ink...")
         
-        # Initialize e-paper display
-        epd = epd2in15g.EPD()
+        # Initialize e-paper display using unified system
+        from unified_epd_adapter import UnifiedEPD, EPDConfig
+        display_type = EPDConfig.load_display_config()
+        epd = UnifiedEPD.create_display(display_type)
         epd.init()
         
         # Clear screen if requested
         if not args.no_clear:
-            epd.Clear()
+            epd.clear()
             time.sleep(1)
         
         # Load fonts (fallback to default if Font.ttc not available)
@@ -119,11 +121,11 @@ def main():
             font_xl = ImageFont.load_default()
         
         # Create display image
-        display_image = Image.new('RGB', (epd.height, epd.width), epd.WHITE)
+        display_image = Image.new('RGB', (epd.landscape_width, epd.landscape_height), epd.WHITE)
         draw = ImageDraw.Draw(display_image)
         
         # Title
-        draw.rectangle([(0, 0), (epd.height, 40)], fill=epd.BLACK)
+        draw.rectangle([(0, 0), (epd.landscape_width, 40)], fill=epd.BLACK)
         draw.text((5, 12), "Raspberry Pi Network Info", font=font_large, fill=epd.WHITE)
         
         # Hostname

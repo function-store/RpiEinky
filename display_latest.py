@@ -110,9 +110,10 @@ class EinkDisplayHandler(FileSystemEventHandler):
         
         # Initialize e-paper display
         if display_type is None:
-            display_type = EPDConfig.load_display_config().get('display_type', 'epd2in15g')
+            display_type = EPDConfig.load_display_config()
         logger.info(f"Initializing display type: {display_type}")
         self.epd = UnifiedEPD.create_display(display_type)
+        self.epd.init()
         
         # Clear screen on start if requested
         if self.clear_on_start:
@@ -184,7 +185,7 @@ class EinkDisplayHandler(FileSystemEventHandler):
             logger.info("Refresh timer disabled")
         
         logger.info(f"Monitoring folder: {self.watched_folder.absolute()}")
-        logger.info(f"E-ink display initialized - Size: {self.epd.width}x{self.epd.height}")
+        logger.info(f"E-ink display initialized - Size: {self.epd.width}x{self.epd.height} (native: {self.epd.native_orientation}, landscape: {self.epd.landscape_width}x{self.epd.landscape_height})")
         logger.info(f"Display orientation: {self.orientation}")
         logger.info(f"Auto-display uploads: {self.auto_display_uploads}")
         logger.info(f"Manufacturer timing requirements: {'ENABLED' if self.enable_manufacturer_timing else 'DISABLED'}")
@@ -551,62 +552,104 @@ class EinkDisplayHandler(FileSystemEventHandler):
         
         # Check if this is a command file from the web interface
         if file_path.name == '.display_command':
-            try:
-                # Read and execute the command
-                with open(file_path, 'r') as f:
-                    command_data = json.load(f)
+            self._process_command_file(file_path)
+            return
+        
+        self._process_regular_file(file_path)
+    
+    def on_modified(self, event):
+        if event.is_directory:
+            return
+        
+        file_path = Path(event.src_path)
+        
+        # Check if this is a command file from the web interface
+        if file_path.name == '.display_command':
+            logger.info(f"Command file modified: {file_path.name}")
+            self._process_command_file(file_path)
+            return
+    
+    def _process_command_file(self, file_path):
+        """Process .display_command file"""
+        try:
+            # Add a small delay to ensure file is fully written
+            time.sleep(0.1)
+            
+            # Check if file exists and is readable
+            if not file_path.exists():
+                logger.warning(f"Command file does not exist: {file_path}")
+                return
                 
-                action = command_data.get('action')
-                filename = command_data.get('filename')
-                
-                logger.info(f"Received command: {action} for file: {filename}")
-                
-                if action == 'display_file' and filename:
-                    # Display the requested file
-                    target_file = self.watched_folder / filename
-                    if target_file.exists():
-                        logger.info(f"Executing display command for: {filename}")
-                        self.display_file(target_file)
-                        self.current_displayed_file = target_file
-                        
-                        # Mark that manual selection was made during startup
-                        if self.startup_timer_active:
-                            logger.info("Manual selection detected during startup - will cancel automatic priority display")
-                            self.manual_selection_during_startup = True
-                    else:
-                        logger.error(f"Command file not found: {filename}")
-                elif action == 'refresh_display':
-                    # Refresh the display with current priority file
-                    logger.info("Executing refresh display command")
+            # Read and execute the command
+            logger.info(f"Reading command file: {file_path}")
+            with open(file_path, 'r') as f:
+                command_data = json.load(f)
+            
+            action = command_data.get('action')
+            filename = command_data.get('filename')
+            
+            logger.info(f"Received command: {action} for file: {filename}")
+            
+            if action == 'display_file' and filename:
+                # Display the requested file
+                target_file = self.watched_folder / filename
+                if target_file.exists():
+                    logger.info(f"Executing display command for: {filename}")
+                    self.display_file(target_file)
+                    self.current_displayed_file = target_file
                     
-                    # During startup, just reload settings without forcing a display refresh
+                    # Mark that manual selection was made during startup
                     if self.startup_timer_active:
-                        logger.info("Settings change detected during startup - reloading settings without display refresh")
-                        self.reload_settings()  # Still reload settings for future use
-                        return
-                    
-                    # Normal refresh behavior (outside startup)
-                    self.reload_settings()  # Reload settings first
-                    priority_file = self.get_priority_display_file()
-                    if priority_file:
-                        logger.info(f"Refreshing display with priority file: {priority_file.name}")
-                        self.display_file(priority_file)
-                        self.current_displayed_file = priority_file
-                    else:
-                        logger.info("No priority file found for refresh")
+                        logger.info("Manual selection detected during startup - will cancel automatic priority display")
+                        self.manual_selection_during_startup = True
+                else:
+                    logger.error(f"Command file not found: {filename}")
+            elif action == 'refresh_display':
+                # Refresh the display with current priority file
+                logger.info("Executing refresh display command")
                 
-                # Clean up command file
-                file_path.unlink()
-                return
+                # During startup, just reload settings without forcing a display refresh
+                if self.startup_timer_active:
+                    logger.info("Settings change detected during startup - reloading settings without display refresh")
+                    self.reload_settings()  # Still reload settings for future use
+                    return
                 
-            except Exception as e:
-                logger.error(f"Error processing command file: {e}")
-                # Clean up command file even on error
+                # Normal refresh behavior (outside startup)
+                self.reload_settings()  # Reload settings first
+                priority_file = self.get_priority_display_file()
+                if priority_file:
+                    logger.info(f"Refreshing display with priority file: {priority_file.name}")
+                    self.display_file(priority_file)
+                    self.current_displayed_file = priority_file
+                else:
+                    logger.info("No priority file found for refresh")
+            elif action == 'clear_display':
+                # Clear the display
+                logger.info("Executing clear display command")
                 try:
-                    file_path.unlink()
-                except:
-                    pass
-                return
+                    if self.enable_sleep_mode:
+                        self.epd.init()
+                    self.epd.clear()
+                    if self.enable_sleep_mode:
+                        self.epd.sleep()
+                    logger.info("Display cleared successfully")
+                    self.current_displayed_file = None
+                except Exception as e:
+                    logger.error(f"Error clearing display: {e}")
+            
+            # Clean up command file
+            file_path.unlink()
+            
+        except Exception as e:
+            logger.error(f"Error processing command file: {e}")
+            # Clean up command file even on error
+            try:
+                file_path.unlink()
+            except:
+                pass
+    
+    def _process_regular_file(self, file_path):
+        """Process regular file uploads"""
         
         # Update timing variables
         self.last_file_update_time = time.time()
@@ -717,13 +760,13 @@ class EinkDisplayHandler(FileSystemEventHandler):
             processed_image = self.resize_image_to_fit(image)
             
             # If the processed image is exactly display size, use it directly
-            if processed_image.size == (self.epd.height, self.epd.width):
+            if processed_image.size == (self.epd.landscape_width, self.epd.landscape_height):
                 display_image = processed_image
             else:
                 # Create display image and center the processed image
-                display_image = Image.new('RGB', (self.epd.height, self.epd.width), self.epd.WHITE)
-                x_offset = (self.epd.height - processed_image.width) // 2
-                y_offset = (self.epd.width - processed_image.height) // 2
+                display_image = Image.new('RGB', (self.epd.landscape_width, self.epd.landscape_height), self.epd.WHITE)
+                x_offset = (self.epd.landscape_width - processed_image.width) // 2
+                y_offset = (self.epd.landscape_height - processed_image.height) // 2
                 display_image.paste(processed_image, (x_offset, y_offset))
             
             success = self.display_buffer(display_image)
@@ -744,11 +787,11 @@ class EinkDisplayHandler(FileSystemEventHandler):
                 content = f.read()
             
             # Create display image
-            display_image = Image.new('RGB', (self.epd.height, self.epd.width), self.epd.WHITE)
+            display_image = Image.new('RGB', (self.epd.landscape_width, self.epd.landscape_height), self.epd.WHITE)
             draw = ImageDraw.Draw(display_image)
             
             # Title
-            draw.rectangle([(0, 0), (self.epd.height, 25)], fill=self.epd.BLACK)
+            draw.rectangle([(0, 0), (self.epd.landscape_width, 25)], fill=self.epd.BLACK)
             title = file_path.name
             if len(title) > 25:
                 title = title[:22] + "..."
@@ -761,7 +804,7 @@ class EinkDisplayHandler(FileSystemEventHandler):
             
             lines = content.split('\n')
             for line in lines:
-                if y_pos > self.epd.width - 20:
+                if y_pos > self.epd.landscape_height - 20:
                     break
                 
                 # Wrap long lines
@@ -776,11 +819,11 @@ class EinkDisplayHandler(FileSystemEventHandler):
                                 draw.text((5, y_pos), current_line.strip(), 
                                         font=self.font_small, fill=self.epd.BLACK)
                                 y_pos += line_height
-                                if y_pos > self.epd.width - 20:
+                                if y_pos > self.epd.landscape_height - 20:
                                     break
                             current_line = word + " "
                     
-                    if current_line and y_pos <= self.epd.width - 20:
+                    if current_line and y_pos <= self.epd.landscape_height - 20:
                         draw.text((5, y_pos), current_line.strip(), 
                                 font=self.font_small, fill=self.epd.BLACK)
                         y_pos += line_height
@@ -823,9 +866,9 @@ class EinkDisplayHandler(FileSystemEventHandler):
                     
                     pdf_image = self.resize_image_to_fit(pdf_image)
                     
-                    display_image = Image.new('RGB', (self.epd.height, self.epd.width), self.epd.WHITE)
-                    x_offset = (self.epd.height - pdf_image.width) // 2
-                    y_offset = (self.epd.width - pdf_image.height) // 2
+                    display_image = Image.new('RGB', (self.epd.landscape_width, self.epd.landscape_height), self.epd.WHITE)
+                    x_offset = (self.epd.landscape_width - pdf_image.width) // 2
+                    y_offset = (self.epd.landscape_height - pdf_image.height) // 2
                     display_image.paste(pdf_image, (x_offset, y_offset))
                     
                     # Apply orientation to the display image
@@ -849,11 +892,11 @@ class EinkDisplayHandler(FileSystemEventHandler):
     def display_file_info(self, file_path):
         """Display file information for unsupported formats"""
         try:
-            display_image = Image.new('RGB', (self.epd.height, self.epd.width), self.epd.WHITE)
+            display_image = Image.new('RGB', (self.epd.landscape_width, self.epd.landscape_height), self.epd.WHITE)
             draw = ImageDraw.Draw(display_image)
             
             # Title
-            draw.rectangle([(0, 0), (self.epd.height, 30)], fill=self.epd.BLACK)
+            draw.rectangle([(0, 0), (self.epd.landscape_width, 30)], fill=self.epd.BLACK)
             draw.text((5, 8), "New File Added", font=self.font_large, fill=self.epd.WHITE)
             
             # File info
@@ -866,7 +909,7 @@ class EinkDisplayHandler(FileSystemEventHandler):
             ]
             
             for item in info_items:
-                if y_pos > self.epd.width - 30:
+                if y_pos > self.epd.landscape_height - 30:
                     break
                 
                 # Wrap long lines
@@ -909,11 +952,11 @@ class EinkDisplayHandler(FileSystemEventHandler):
     def display_error(self, filename, error_msg):
         """Display error message on e-ink"""
         try:
-            display_image = Image.new('RGB', (self.epd.height, self.epd.width), self.epd.WHITE)
+            display_image = Image.new('RGB', (self.epd.landscape_width, self.epd.landscape_height), self.epd.WHITE)
             draw = ImageDraw.Draw(display_image)
             
             # Error title
-            draw.rectangle([(0, 0), (self.epd.height, 30)], fill=self.epd.RED)
+            draw.rectangle([(0, 0), (self.epd.landscape_width, 30)], fill=self.epd.RED)
             draw.text((5, 8), "ERROR", font=self.font_large, fill=self.epd.WHITE)
             
             # Error details
@@ -932,11 +975,11 @@ class EinkDisplayHandler(FileSystemEventHandler):
                         draw.text((5, y_pos), current_line.strip(), 
                                 font=self.font_small, fill=self.epd.BLACK)
                         y_pos += 15
-                        if y_pos > self.epd.width - 30:
+                        if y_pos > self.epd.landscape_height - 30:
                             break
                     current_line = word + " "
             
-            if current_line and y_pos <= self.epd.width - 30:
+            if current_line and y_pos <= self.epd.landscape_height - 30:
                 draw.text((5, y_pos), current_line.strip(), 
                         font=self.font_small, fill=self.epd.BLACK)
             
@@ -960,11 +1003,11 @@ class EinkDisplayHandler(FileSystemEventHandler):
             ip_address = get_ip_address()
             hostname = socket.gethostname()
             
-            display_image = Image.new('RGB', (self.epd.height, self.epd.width), self.epd.WHITE)
+            display_image = Image.new('RGB', (self.epd.landscape_width, self.epd.landscape_height), self.epd.WHITE)
             draw = ImageDraw.Draw(display_image)
             
             # Title
-            draw.rectangle([(0, 0), (self.epd.height, 35)], fill=self.epd.BLACK)
+            draw.rectangle([(0, 0), (self.epd.landscape_width, 35)], fill=self.epd.BLACK)
             draw.text((5, 10), "Device Information", font=self.font_large, fill=self.epd.WHITE)
             
             # Hostname
@@ -1006,11 +1049,11 @@ class EinkDisplayHandler(FileSystemEventHandler):
             ip_address = get_ip_address()
             hostname = socket.gethostname()
             
-            display_image = Image.new('RGB', (self.epd.height, self.epd.width), self.epd.WHITE)
+            display_image = Image.new('RGB', (self.epd.landscape_width, self.epd.landscape_height), self.epd.WHITE)
             draw = ImageDraw.Draw(display_image)
             
             # Title
-            draw.rectangle([(0, 0), (self.epd.height, 35)], fill=self.epd.BLACK)
+            draw.rectangle([(0, 0), (self.epd.landscape_width, 35)], fill=self.epd.BLACK)
             draw.text((5, 10), "E-ink File Monitor", font=self.font_large, fill=self.epd.WHITE)
             
             # IP Address and Web Interface (consolidated)
@@ -1047,8 +1090,8 @@ class EinkDisplayHandler(FileSystemEventHandler):
     
     def resize_image_to_fit(self, image):
         """Resize image to fit display while maintaining aspect ratio, with configurable crop mode"""
-        display_width = self.epd.width
-        display_height = self.epd.height
+        display_width = self.epd.landscape_height
+        display_height = self.epd.landscape_width
         
         # If image is smaller than display in both dimensions, scale up to fit
         if image.width <= display_height and image.height <= display_width:
@@ -1182,7 +1225,7 @@ Timing Features:
     if args.show_ip:
         try:
             # Get display type for IP display
-            display_type = args.display_type or EPDConfig.load_display_config().get('display_type', 'epd2in15g')
+            display_type = args.display_type or EPDConfig.load_display_config()
             logger.info(f"Using display type for IP display: {display_type}")
             
             # Create temporary handler just to display IP

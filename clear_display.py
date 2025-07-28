@@ -12,17 +12,18 @@ libdir = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__)
 if os.path.exists(libdir):
     sys.path.append(libdir)
 
-from waveshare_epd import epd2in15g
+from unified_epd_adapter import UnifiedEPD, EPDConfig
 
 def clear_display():
     """Clear the e-ink display"""
     try:
         print("🖥️  Initializing e-ink display...")
-        epd = epd2in15g.EPD()
+        display_type = EPDConfig.load_display_config()
+        epd = UnifiedEPD.create_display(display_type)
         epd.init()
         
         print("🧹 Clearing display...")
-        epd.Clear()
+        epd.clear()
         
         print("💤 Putting display to sleep...")
         epd.sleep()
