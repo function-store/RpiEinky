@@ -101,7 +101,7 @@ def signal_handler_clear_exit(signum, frame):
 
 
 class EinkDisplayHandler(FileSystemEventHandler):
-    def __init__(self, watched_folder="~/watched_files", clear_on_start=False, clear_on_exit=True, disable_startup_timer=False, disable_refresh_timer=False, refresh_interval_hours=24, startup_delay_minutes=1, enable_manufacturer_timing=False, enable_sleep_mode=True, display_type=None):
+    def __init__(self, watched_folder="~/watched_files", clear_on_start=False, clear_on_exit=True, disable_startup_timer=None, disable_refresh_timer=None, refresh_interval_hours=None, startup_delay_minutes=None, enable_manufacturer_timing=None, enable_sleep_mode=None, display_type=None):
         logger.info("DEBUG: EinkDisplayHandler.__init__ called")
         self.watched_folder = Path(os.path.expanduser(watched_folder))
         self.watched_folder.mkdir(exist_ok=True)
@@ -130,6 +130,32 @@ class EinkDisplayHandler(FileSystemEventHandler):
         # Load settings
         self.load_settings()
         
+        # Override settings with command line arguments (command line takes precedence)
+        # Only override if the argument was explicitly provided via command line
+        # For boolean flags, we check if they were explicitly set to True
+        # For numeric values, we check if they differ from defaults
+        logger.info(f"COMMAND LINE OVERRIDE - disable_startup_timer parameter: {disable_startup_timer}")
+        logger.info(f"COMMAND LINE OVERRIDE - disable_startup_timer parameter type: {type(disable_startup_timer)}")
+        
+        if disable_startup_timer is not None:  # Only override if explicitly True (--disable-startup-timer)
+            self.disable_startup_timer = disable_startup_timer
+            logger.info(f"Command line override: disable_startup_timer = {disable_startup_timer}")
+        if disable_refresh_timer is not None:  # Only override if explicitly True (--disable-refresh-timer)
+            self.disable_refresh_timer = disable_refresh_timer
+            logger.info(f"Command line override: disable_refresh_timer = {disable_refresh_timer}")
+        if startup_delay_minutes is not None:  # Only override if not default
+            self.startup_delay_minutes = startup_delay_minutes
+            logger.info(f"Command line override: startup_delay_minutes = {startup_delay_minutes}")
+        if refresh_interval_hours is not None:  # Only override if not default
+            self.refresh_interval_hours = refresh_interval_hours
+            logger.info(f"Command line override: refresh_interval_hours = {refresh_interval_hours}")
+        if enable_manufacturer_timing is not None:  # Only override if explicitly True (--enable-manufacturer-timing)
+            self.enable_manufacturer_timing = enable_manufacturer_timing
+            logger.info(f"Command line override: enable_manufacturer_timing = {enable_manufacturer_timing}")
+        if enable_sleep_mode is not None:  # Only override if explicitly False (--disable-sleep-mode)
+            self.enable_sleep_mode = enable_sleep_mode
+            logger.info(f"Command line override: enable_sleep_mode = {enable_sleep_mode}")
+        
         # Load fonts (fallback to default if Font.ttc not available)
         try:
             self.font_small = ImageFont.truetype(os.path.join(picdir, 'Font.ttc'), 12)
@@ -157,25 +183,33 @@ class EinkDisplayHandler(FileSystemEventHandler):
         self.min_refresh_interval = 180 if enable_manufacturer_timing else 0  # Minimum 180 seconds between refreshes (if enabled)
         
         # Set initial timing values from constructor parameters
-        self.refresh_interval_hours = refresh_interval_hours
-        self.startup_delay_minutes = startup_delay_minutes
-        self.disable_startup_timer = disable_startup_timer
-        self.disable_refresh_timer = disable_refresh_timer
-        
-        # Load settings (this will override timing values from settings file if available)
-        self.load_settings()
+        # Only set these if they were explicitly provided (not None)
+        if refresh_interval_hours is not None:
+            self.refresh_interval_hours = refresh_interval_hours
+        if startup_delay_minutes is not None:
+            self.startup_delay_minutes = startup_delay_minutes
+        if disable_startup_timer is not None:
+            self.disable_startup_timer = disable_startup_timer
+        if disable_refresh_timer is not None:
+            self.disable_refresh_timer = disable_refresh_timer
         
         # Start background threads for timing features (unless disabled)
         self.startup_timer_thread = None
         self.refresh_timer_thread = None
         
         # Start startup timer if enabled
+        logger.info(f"About to start startup timer - disable_startup_timer: {self.disable_startup_timer}")
+        logger.info(f"About to start startup timer - disable_startup_timer type: {type(self.disable_startup_timer)}")
+        logger.info(f"About to start startup timer - disable_startup_timer == True: {self.disable_startup_timer == True}")
+        logger.info(f"About to start startup timer - disable_startup_timer == False: {self.disable_startup_timer == False}")
+        logger.info(f"About to start startup timer - not self.disable_startup_timer: {not self.disable_startup_timer}")
+        
         if not self.disable_startup_timer:
             self.startup_timer_thread = threading.Thread(target=self.startup_timer_worker, daemon=True)
             self.startup_timer_thread.start()
             logger.info(f"Startup timer enabled: {self.startup_delay_minutes}-minute delay")
         else:
-            logger.info("Startup timer disabled")
+            logger.info("Startup timer disabled - NOT starting startup timer thread")
             
         # Start refresh timer if enabled
         if not self.disable_refresh_timer:
@@ -192,18 +226,34 @@ class EinkDisplayHandler(FileSystemEventHandler):
         logger.info(f"Manufacturer timing requirements: {'ENABLED' if self.enable_manufacturer_timing else 'DISABLED'}")
         logger.info(f"Sleep mode: {'ENABLED' if self.enable_sleep_mode else 'DISABLED'}")
         logger.info(f"Display dimensions - Width: {self.epd.landscape_width}, Height: {self.epd.landscape_height}")
+        logger.info(f"FINAL TIMING SETTINGS - Startup timer: {'DISABLED' if self.disable_startup_timer else 'ENABLED'}, Refresh timer: {'DISABLED' if self.disable_refresh_timer else 'ENABLED'}")
     
 
     
     def startup_timer_worker(self):
         """Worker thread for configurable startup display delay"""
         try:
+            logger.info("Startup timer worker started")
+            logger.info(f"Startup timer worker - disable_startup_timer value: {self.disable_startup_timer}")
+            logger.info(f"Startup timer worker - startup_timer_active value: {self.startup_timer_active}")
+            
+            # Check if startup timer is still enabled (in case it was disabled after thread started)
+            if self.disable_startup_timer:
+                logger.info("Startup timer was disabled after thread started - exiting worker")
+                return
+                
+            # Ensure we have valid timing values
+            if self.startup_delay_minutes is None:
+                logger.warning("startup_delay_minutes is None, using default value of 1")
+                self.startup_delay_minutes = 1
+                
             # Show welcome screen first
             logger.info("Showing welcome screen during startup delay...")
             self.display_welcome_screen()
             
             # Wait for the configured startup delay
             startup_delay_seconds = self.startup_delay_minutes * 60
+            logger.info(f"Waiting {startup_delay_seconds} seconds for startup delay...")
             time.sleep(startup_delay_seconds)
             
             # Check if manual selection was made during startup
@@ -216,6 +266,8 @@ class EinkDisplayHandler(FileSystemEventHandler):
             if not exit_requested and self.startup_timer_active:
                 logger.info(f"{self.startup_delay_minutes}-minute startup timer triggered - checking for priority file")
                 self.display_latest_file_if_no_updates()
+            else:
+                logger.info(f"Startup timer conditions not met - exit_requested: {exit_requested}, startup_timer_active: {self.startup_timer_active}")
                 
         except Exception as e:
             logger.error(f"Startup timer worker error: {e}")
@@ -223,6 +275,11 @@ class EinkDisplayHandler(FileSystemEventHandler):
     def refresh_timer_worker(self):
         """Worker thread for configurable refresh interval"""
         try:
+            # Ensure we have valid timing values
+            if self.refresh_interval_hours is None:
+                logger.warning("refresh_interval_hours is None, using default value of 24")
+                self.refresh_interval_hours = 24
+                
             while not exit_requested:
                 # Wait for the configured refresh interval
                 refresh_interval_seconds = self.refresh_interval_hours * 3600
@@ -260,6 +317,11 @@ class EinkDisplayHandler(FileSystemEventHandler):
     def perform_display_refresh(self):
         """Perform a configurable refresh by clearing and re-displaying current content"""
         try:
+            # Ensure we have valid timing values
+            if self.refresh_interval_hours is None:
+                logger.warning("refresh_interval_hours is None, using default value of 24")
+                self.refresh_interval_hours = 24
+                
             logger.info(f"Performing {self.refresh_interval_hours}-hour display refresh...")
             
             # Clear the display
@@ -317,6 +379,8 @@ class EinkDisplayHandler(FileSystemEventHandler):
                     logger.info(f"Settings loaded from {settings_file} - Auto-display: {self.auto_display_uploads}, Crop mode: {self.image_crop_mode}, Orientation: {self.orientation}, Selected image: {self.selected_image}")
                     logger.info(f"Timing settings - Startup timer: {'DISABLED' if self.disable_startup_timer else 'ENABLED'}, Refresh timer: {'DISABLED' if self.disable_refresh_timer else 'ENABLED'}")
                     logger.info(f"Timing values - Startup delay: {self.startup_delay_minutes}min, Refresh: {self.refresh_interval_hours}h")
+                    logger.info(f"LOAD_SETTINGS - disable_startup_timer value: {self.disable_startup_timer}")
+                    logger.info(f"LOAD_SETTINGS - disable_startup_timer type: {type(self.disable_startup_timer)}")
             else:
                 # Default settings
                 self.auto_display_uploads = True
@@ -446,6 +510,7 @@ class EinkDisplayHandler(FileSystemEventHandler):
             
             # Priority 2: Latest file (fallback)
             latest_file = self.get_latest_file()
+            logger.info(f"DEBUG: Latest file result: {latest_file}")
             if latest_file:
                 logger.info(f"Priority: Latest file: {latest_file.name}")
                 return latest_file
@@ -1333,12 +1398,12 @@ Timing Features:
     ORIENTATION = args.orientation
     CLEAR_ON_START = args.clear_start
     CLEAR_ON_EXIT = not args.no_clear_exit
-    DISABLE_STARTUP_TIMER = args.disable_startup_timer
-    DISABLE_REFRESH_TIMER = args.disable_refresh_timer
-    REFRESH_INTERVAL_HOURS = args.refresh_interval
-    STARTUP_DELAY_MINUTES = args.startup_delay
-    ENABLE_MANUFACTURER_TIMING = args.enable_manufacturer_timing
-    ENABLE_SLEEP_MODE = not args.disable_sleep_mode
+    DISABLE_STARTUP_TIMER = args.disable_startup_timer if args.disable_startup_timer else None
+    DISABLE_REFRESH_TIMER = args.disable_refresh_timer if args.disable_refresh_timer else None
+    REFRESH_INTERVAL_HOURS = args.refresh_interval if args.refresh_interval != 24 else None
+    STARTUP_DELAY_MINUTES = args.startup_delay if args.startup_delay != 1 else None
+    ENABLE_MANUFACTURER_TIMING = args.enable_manufacturer_timing if args.enable_manufacturer_timing else None
+    ENABLE_SLEEP_MODE = not args.disable_sleep_mode if args.disable_sleep_mode else None
     DISPLAY_TYPE = args.display_type
     
     # Set up signal handlers only if we're in the main thread
@@ -1410,16 +1475,21 @@ Timing Features:
                 handler.display_welcome_screen()
         else:
             # Check if startup timer is enabled
-            if not DISABLE_STARTUP_TIMER:
+            logger.info(f"MAIN FUNCTION - DISABLE_STARTUP_TIMER value: {DISABLE_STARTUP_TIMER}")
+            logger.info(f"MAIN FUNCTION - handler.disable_startup_timer value: {handler.disable_startup_timer}")
+            if not handler.disable_startup_timer:
                 # Startup timer is enabled - show welcome screen, timer will handle priority file later
                 logger.info("Startup timer enabled - showing welcome screen, priority file will be displayed after delay")
                 handler.display_welcome_screen()
             else:
                 # Startup timer is disabled - display priority file immediately
+                logger.info("Startup timer disabled - attempting to display priority file immediately")
                 priority_file = handler.get_priority_display_file()
+                logger.info(f"Priority file result: {priority_file}")
                 if priority_file:
                     logger.info(f"Displaying priority file: {priority_file}")
-                    handler.display_file(priority_file)
+                    success = handler.display_file(priority_file)
+                    logger.info(f"Priority file display result: {success}")
                     handler.current_displayed_file = priority_file  # Track current displayed file
                 else:
                     logger.info("No priority file found, showing welcome screen")
