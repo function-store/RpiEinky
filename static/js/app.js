@@ -67,6 +67,11 @@ class EinkDisplayManager {
         document.getElementById('thumbnail-quality').addEventListener('input', (e) => {
             document.getElementById('thumbnail-quality-value').textContent = e.target.value;
         });
+        
+        // Bind refresh timer checkbox to control interval field state
+        document.getElementById('disable-refresh-timer').addEventListener('change', () => {
+            this.updateRefreshIntervalFieldState();
+        });
     }
     
     // ============ DRAG & DROP HANDLING ============
@@ -745,6 +750,9 @@ class EinkDisplayManager {
         document.getElementById('enable-sleep-mode').checked = settings.enable_sleep_mode !== false;
         document.getElementById('orientation').value = settings.orientation || 'landscape';
         
+        // Update refresh interval field state based on refresh timer setting
+        this.updateRefreshIntervalFieldState();
+        
         // Update selected image display
 
     }
@@ -794,6 +802,24 @@ class EinkDisplayManager {
         } catch (error) {
             console.error('Error saving settings:', error);
             this.showToast(`Failed to save settings: ${error.message}`, 'error');
+        }
+    }
+    
+    updateRefreshIntervalFieldState() {
+        const refreshTimerCheckbox = document.getElementById('disable-refresh-timer');
+        const refreshIntervalField = document.getElementById('refresh-interval');
+        const refreshIntervalLabel = refreshIntervalField.previousElementSibling;
+        
+        if (refreshTimerCheckbox.checked) {
+            // Refresh timer is disabled - disable the interval field
+            refreshIntervalField.disabled = true;
+            refreshIntervalField.style.opacity = '0.5';
+            refreshIntervalLabel.style.opacity = '0.5';
+        } else {
+            // Refresh timer is enabled - enable the interval field
+            refreshIntervalField.disabled = false;
+            refreshIntervalField.style.opacity = '1';
+            refreshIntervalLabel.style.opacity = '1';
         }
     }
     

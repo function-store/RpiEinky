@@ -208,18 +208,22 @@
                     </div>
                     
                     <div class="setting-group">
-                        <label for="disable-refresh-timer">Disable Refresh Timer:</label>
-                        <input type="checkbox" id="disable-refresh-timer" class="setting-input">
-                        <p class="setting-description">
-                            Disable the automatic refresh timer. When disabled, no periodic refresh will occur to prevent ghosting.
-                        </p>
-                    </div>
-                    
-                    <div class="setting-group">
                         <label for="startup-delay">Startup Delay (minutes):</label>
                         <input type="number" id="startup-delay" class="setting-input" min="0" max="60" step="1">
                         <p class="setting-description">
                             Delay before displaying latest file on startup (0 = immediate, default: 1)
+                        </p>
+                    </div>
+                </div>
+                
+                <!-- Display Health Settings -->
+                <div class="settings-section">
+                    <h4><i class="fas fa-shield-alt"></i> Display Health</h4>
+                    <div class="setting-group">
+                        <label for="disable-refresh-timer">Disable Refresh Timer:</label>
+                        <input type="checkbox" id="disable-refresh-timer" class="setting-input">
+                        <p class="setting-description">
+                            Disable the automatic refresh timer. When disabled, no periodic refresh will occur to prevent ghosting.
                         </p>
                     </div>
                     
@@ -230,11 +234,7 @@
                             How often to refresh the display to prevent ghosting (default: 24 hours)
                         </p>
                     </div>
-                </div>
-                
-                <!-- Display Health Settings -->
-                <div class="settings-section">
-                    <h4><i class="fas fa-shield-alt"></i> Display Health</h4>
+                    
                     <div class="setting-group">
                         <label for="enable-manufacturer-timing">Enable Manufacturer Timing Requirements:</label>
                         <input type="checkbox" id="enable-manufacturer-timing" class="setting-input">

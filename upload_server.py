@@ -402,17 +402,30 @@ def update_settings():
         if save_settings(current_settings):
             logger.info(f"Settings updated: {list(data.keys())}")
             
-            # If orientation was changed, trigger a re-display of current content asynchronously
-            if 'orientation' in data:
-                logger.info(f"Orientation changed to: {data['orientation']} - triggering refresh display")
+            # Check if any settings that require immediate action were changed
+            immediate_action_settings = [
+                'orientation',           # Display refresh needed
+                'image_crop_mode',      # Display refresh needed
+                'enable_sleep_mode',    # Display refresh needed
+                'disable_refresh_timer', # Timer restart needed
+                'refresh_interval_hours', # Timer restart needed
+                'enable_manufacturer_timing' # Timer restart needed
+            ]
+            immediate_action_changed = any(setting in data for setting in immediate_action_settings)
+            
+            if immediate_action_changed:
+                changed_settings = [setting for setting in immediate_action_settings if setting in data]
+                logger.info(f"Settings requiring immediate action changed: {changed_settings} - triggering refresh display")
                 try:
                     import threading
                     # Run re-display in background thread so web interface doesn't block
                     thread = threading.Thread(target=trigger_settings_reload_and_redisplay, daemon=True)
                     thread.start()
-                    logger.info("Started background re-display due to orientation change")
+                    logger.info("Started background re-display due to settings change")
                 except Exception as e:
-                    logger.warning(f"Failed to start background re-display after orientation change: {e}")
+                    logger.warning(f"Failed to start background re-display after settings change: {e}")
+            else:
+                logger.info("No settings requiring immediate action changed - skipping refresh display")
             
             return jsonify({
                 'message': 'Settings updated successfully',

@@ -131,30 +131,68 @@ class EinkDisplayHandler(FileSystemEventHandler):
         self.load_settings()
         
         # Override settings with command line arguments (command line takes precedence)
-        # Only override if the argument was explicitly provided via command line
-        # For boolean flags, we check if they were explicitly set to True
-        # For numeric values, we check if they differ from defaults
+        # Command line arguments always take precedence when provided
         logger.info(f"COMMAND LINE OVERRIDE - disable_startup_timer parameter: {disable_startup_timer}")
         logger.info(f"COMMAND LINE OVERRIDE - disable_startup_timer parameter type: {type(disable_startup_timer)}")
         
-        if disable_startup_timer is not None:  # Only override if explicitly True (--disable-startup-timer)
-            self.disable_startup_timer = disable_startup_timer
-            logger.info(f"Command line override: disable_startup_timer = {disable_startup_timer}")
-        if disable_refresh_timer is not None:  # Only override if explicitly True (--disable-refresh-timer)
-            self.disable_refresh_timer = disable_refresh_timer
-            logger.info(f"Command line override: disable_refresh_timer = {disable_refresh_timer}")
-        if startup_delay_minutes is not None:  # Only override if not default
+        # Store original settings file values for comparison
+        original_disable_startup_timer = self.disable_startup_timer
+        original_disable_refresh_timer = self.disable_refresh_timer
+        original_startup_delay_minutes = self.startup_delay_minutes
+        original_refresh_interval_hours = self.refresh_interval_hours
+        original_enable_manufacturer_timing = self.enable_manufacturer_timing
+        original_enable_sleep_mode = self.enable_sleep_mode
+        
+        # Track if any command line arguments were used
+        command_line_args_used = False
+        
+        # Convert string arguments to appropriate types
+        if disable_startup_timer is not None:
+            disable_startup_timer_bool = disable_startup_timer.lower() == 'true'
+            if disable_startup_timer_bool != original_disable_startup_timer:
+                self.disable_startup_timer = disable_startup_timer_bool
+                logger.info(f"Command line override: disable_startup_timer = {disable_startup_timer_bool} (was {original_disable_startup_timer})")
+                command_line_args_used = True
+                
+        if disable_refresh_timer is not None:
+            disable_refresh_timer_bool = disable_refresh_timer.lower() == 'true'
+            if disable_refresh_timer_bool != original_disable_refresh_timer:
+                self.disable_refresh_timer = disable_refresh_timer_bool
+                logger.info(f"Command line override: disable_refresh_timer = {disable_refresh_timer_bool} (was {original_disable_refresh_timer})")
+                command_line_args_used = True
+                
+        if startup_delay_minutes is not None and startup_delay_minutes != 1:  # Only override if not default
             self.startup_delay_minutes = startup_delay_minutes
-            logger.info(f"Command line override: startup_delay_minutes = {startup_delay_minutes}")
-        if refresh_interval_hours is not None:  # Only override if not default
+            logger.info(f"Command line override: startup_delay_minutes = {startup_delay_minutes} (was {original_startup_delay_minutes})")
+            command_line_args_used = True
+            
+        if refresh_interval_hours is not None and refresh_interval_hours != 24:  # Only override if not default
             self.refresh_interval_hours = refresh_interval_hours
-            logger.info(f"Command line override: refresh_interval_hours = {refresh_interval_hours}")
-        if enable_manufacturer_timing is not None:  # Only override if explicitly True (--enable-manufacturer-timing)
-            self.enable_manufacturer_timing = enable_manufacturer_timing
-            logger.info(f"Command line override: enable_manufacturer_timing = {enable_manufacturer_timing}")
-        if enable_sleep_mode is not None:  # Only override if explicitly False (--disable-sleep-mode)
-            self.enable_sleep_mode = enable_sleep_mode
-            logger.info(f"Command line override: enable_sleep_mode = {enable_sleep_mode}")
+            logger.info(f"Command line override: refresh_interval_hours = {refresh_interval_hours} (was {original_refresh_interval_hours})")
+            command_line_args_used = True
+            
+        if enable_manufacturer_timing is not None:
+            enable_manufacturer_timing_bool = enable_manufacturer_timing.lower() == 'true'
+            if enable_manufacturer_timing_bool != original_enable_manufacturer_timing:
+                self.enable_manufacturer_timing = enable_manufacturer_timing_bool
+                logger.info(f"Command line override: enable_manufacturer_timing = {enable_manufacturer_timing_bool} (was {original_enable_manufacturer_timing})")
+                command_line_args_used = True
+                
+        if enable_sleep_mode is not None:
+            enable_sleep_mode_bool = enable_sleep_mode.lower() == 'true'
+            if enable_sleep_mode_bool != original_enable_sleep_mode:
+                self.enable_sleep_mode = enable_sleep_mode_bool
+                logger.info(f"Command line override: enable_sleep_mode = {enable_sleep_mode_bool} (was {original_enable_sleep_mode})")
+                command_line_args_used = True
+            
+        # Save settings to file if command line arguments were used OR if settings file doesn't exist
+        settings_file = Path(os.path.expanduser('~/watched_files')) / '.settings.json'
+        if command_line_args_used or not settings_file.exists():
+            if command_line_args_used:
+                logger.info("Command line arguments used - saving updated settings to file")
+            else:
+                logger.info("Settings file doesn't exist - creating it with current values")
+            self.save_settings_to_file()
         
         # Load fonts (fallback to default if Font.ttc not available)
         try:
@@ -412,6 +450,67 @@ class EinkDisplayHandler(FileSystemEventHandler):
         """Reload settings from file (useful when settings change)"""
         self.load_settings()
         logger.info(f"Settings reloaded - Auto-display: {self.auto_display_uploads}, Crop mode: {self.image_crop_mode}, Orientation: {self.orientation}")
+    
+    def restart_refresh_timer(self):
+        """Restart the refresh timer with current settings"""
+        try:
+            logger.info(f"Restarting refresh timer - Current settings:")
+            logger.info(f"  disable_refresh_timer: {self.disable_refresh_timer}")
+            logger.info(f"  refresh_interval_hours: {self.refresh_interval_hours}")
+            logger.info(f"  enable_manufacturer_timing: {self.enable_manufacturer_timing}")
+            
+            # Stop existing timer thread if running
+            if hasattr(self, 'refresh_timer_thread') and self.refresh_timer_thread.is_alive():
+                logger.info("Stopping existing refresh timer thread")
+                # Note: We can't directly stop the thread, but we can set a flag
+                # The thread will exit on its own when it checks the condition
+            
+            # Start new timer thread if enabled
+            if not self.disable_refresh_timer:
+                self.refresh_timer_thread = threading.Thread(target=self.refresh_timer_worker, daemon=True)
+                self.refresh_timer_thread.start()
+                logger.info(f"Refresh timer restarted: {self.refresh_interval_hours}-hour interval")
+            else:
+                logger.info("Refresh timer disabled - not starting new thread")
+                
+        except Exception as e:
+            logger.error(f"Error restarting refresh timer: {e}")
+    
+    def save_settings_to_file(self):
+        """Save current settings to the settings file"""
+        try:
+            # Use the same path as the upload server
+            settings_file = Path(os.path.expanduser('~/watched_files')) / '.settings.json'
+            logger.info(f"DEBUG: Saving settings to: {settings_file.absolute()}")
+            
+            # Load existing settings
+            settings = {}
+            if settings_file.exists():
+                import json
+                with open(settings_file, 'r') as f:
+                    settings = json.load(f)
+            
+            # Update settings with current values
+            settings['auto_display_upload'] = self.auto_display_uploads
+            settings['image_crop_mode'] = self.image_crop_mode
+            settings['orientation'] = self.orientation
+            settings['startup_delay_minutes'] = self.startup_delay_minutes
+            settings['refresh_interval_hours'] = self.refresh_interval_hours
+            settings['disable_startup_timer'] = self.disable_startup_timer
+            settings['disable_refresh_timer'] = self.disable_refresh_timer
+            settings['enable_manufacturer_timing'] = self.enable_manufacturer_timing
+            settings['enable_sleep_mode'] = self.enable_sleep_mode
+            if hasattr(self, 'selected_image'):
+                settings['selected_image'] = self.selected_image
+            
+            # Save settings back to file
+            with open(settings_file, 'w') as f:
+                json.dump(settings, f, indent=2)
+            
+            logger.info(f"Settings saved to file: {list(settings.keys())}")
+            
+        except Exception as e:
+            logger.error(f"Error saving settings to file: {e}")
     
     def save_selected_image_setting(self, filename):
         """Save the selected image setting to the settings file"""
@@ -720,6 +819,9 @@ class EinkDisplayHandler(FileSystemEventHandler):
                 
                 # Always reload settings first
                 self.reload_settings()
+                
+                # Restart refresh timer with new settings
+                self.restart_refresh_timer()
                 
                 # During startup, still refresh display if this is an orientation change
                 # (orientation changes should always trigger immediate refresh)
@@ -1321,18 +1423,18 @@ Timing Features:
                         help='Test orientation by displaying a test image immediately and exiting')
     parser.add_argument('--orientation', choices=['landscape', 'landscape_flipped', 'portrait', 'portrait_flipped'],
                         default='landscape', help='Display orientation (default: landscape)')
-    parser.add_argument('--disable-startup-timer', action='store_true',
-                       help='Disable automatic startup display timer')
-    parser.add_argument('--disable-refresh-timer', action='store_true',
-                       help='Disable automatic refresh timer')
+    parser.add_argument('--disable-startup-timer', type=str, choices=['true', 'false'], default=None,
+                       help='Set disable_startup_timer (true/false)')
+    parser.add_argument('--disable-refresh-timer', type=str, choices=['true', 'false'], default=None,
+                       help='Set disable_refresh_timer (true/false)')
     parser.add_argument('--refresh-interval', type=int, default=24,
                        help='Refresh interval in hours (default: 24)')
     parser.add_argument('--startup-delay', type=int, default=1,
                        help='Startup delay in minutes before displaying latest file (default: 1)')
-    parser.add_argument('--enable-manufacturer-timing', action='store_true',
-                       help='Enable manufacturer timing requirements (180s minimum refresh interval)')
-    parser.add_argument('--disable-sleep-mode', action='store_true',
-                       help='Disable sleep mode between operations (faster but uses more power)')
+    parser.add_argument('--enable-manufacturer-timing', type=str, choices=['true', 'false'], default=None,
+                       help='Set enable_manufacturer_timing (true/false)')
+    parser.add_argument('--enable-sleep-mode', type=str, choices=['true', 'false'], default=None,
+                       help='Set enable_sleep_mode (true/false)')
     
     args = parser.parse_args()
     
@@ -1361,7 +1463,7 @@ Timing Features:
         logger.info(f"Testing orientation: {args.test_orientation}")
         try:
             # Create temporary handler just to test orientation
-            temp_handler = EinkDisplayHandler(clear_on_start=False, clear_on_exit=False, display_type=display_type)
+            temp_handler = EinkDisplayHandler(clear_on_start=False, clear_on_exit=False, display_type=args.display_type)
             temp_handler.orientation = args.test_orientation
             
             # Create a test image with orientation indicators
@@ -1398,12 +1500,12 @@ Timing Features:
     ORIENTATION = args.orientation
     CLEAR_ON_START = args.clear_start
     CLEAR_ON_EXIT = not args.no_clear_exit
-    DISABLE_STARTUP_TIMER = args.disable_startup_timer if args.disable_startup_timer else None
-    DISABLE_REFRESH_TIMER = args.disable_refresh_timer if args.disable_refresh_timer else None
-    REFRESH_INTERVAL_HOURS = args.refresh_interval if args.refresh_interval != 24 else None
-    STARTUP_DELAY_MINUTES = args.startup_delay if args.startup_delay != 1 else None
-    ENABLE_MANUFACTURER_TIMING = args.enable_manufacturer_timing if args.enable_manufacturer_timing else None
-    ENABLE_SLEEP_MODE = not args.disable_sleep_mode if args.disable_sleep_mode else None
+    DISABLE_STARTUP_TIMER = args.disable_startup_timer
+    DISABLE_REFRESH_TIMER = args.disable_refresh_timer
+    REFRESH_INTERVAL_HOURS = args.refresh_interval
+    STARTUP_DELAY_MINUTES = args.startup_delay
+    ENABLE_MANUFACTURER_TIMING = args.enable_manufacturer_timing
+    ENABLE_SLEEP_MODE = args.enable_sleep_mode
     DISPLAY_TYPE = args.display_type
     
     # Set up signal handlers only if we're in the main thread
