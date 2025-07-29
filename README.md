@@ -131,8 +131,45 @@ Access settings via the **Settings** button in the web interface:
 - **Enabled (Default):** Puts display to sleep between operations for power efficiency
 - **Disabled:** Display stays active between operations (faster but uses more power)
 
-### 📁 **Settings Storage**
-Settings are saved to `~/.config/rpi-einky/settings.json` and persist across restarts.
+#### **📋 Settings File Location**
+Settings are stored in the dedicated application configuration directory:
+
+**Location:** `~/.config/rpi-einky/settings.json`
+
+**Benefits:**
+- ✅ **Persistent settings** - Settings won't be lost if watched folder changes
+- ✅ **Clean separation** - Application config separate from user files
+- ✅ **Standard location** - Follows Linux configuration conventions
+- ✅ **No conflicts** - Settings won't be processed as display files
+
+**Automatic creation:** The system automatically creates the settings file with defaults if it doesn't exist, is empty, or has missing fields.
+
+#### **📋 Command File System**
+The system uses a command file system for communication between components:
+
+**Location:** `~/.config/rpi-einky/commands/`
+
+**Command Files:**
+- `display_file.json` - Display a specific file on e-ink
+- `refresh_display.json` - Reload settings and redisplay current content
+- `clear_display.json` - Clear the e-ink display
+- `get_display_info.json` - Request display information
+- `update_display_info.json` - Update display info with current settings
+
+**Response Files:**
+- `display_info_response.json` - Display information response
+
+**How it works:**
+1. **Web server** writes command files to `~/.config/rpi-einky/commands/`
+2. **Display handler** monitors the commands directory for new files
+3. **Display handler** processes commands and writes response files
+4. **Web server** reads response files for status information
+
+**Benefits:**
+- ✅ **Reliable communication** - File-based communication between processes
+- ✅ **No network overhead** - Direct file system communication
+- ✅ **Persistent commands** - Commands survive process restarts
+- ✅ **Clean architecture** - Separation between web UI and display logic
 
 ## 🛠️ Hardware Requirements
 
@@ -622,6 +659,50 @@ The system includes a complete TouchDesigner integration for remote file uploads
 | `/delete_multiple` | POST | Delete multiple files | JSON: `{"filenames": ["file1.jpg", "file2.txt"]}` |
 | `/thumbnails/<filename>` | GET | Serve thumbnail images | Image file |
 | `/files/<filename>` | GET | Serve original files | File download |
+
+#### **📺 Display Information API**
+| Endpoint | Method | Purpose | Data Format |
+|----------|---------|---------|-------------|
+| `/display_info` | GET | Get display resolution, orientation, and device info | Returns JSON with display details |
+
+**Display Info Response Format:**
+```json
+{
+  "display_type": "epd2in15g",
+  "resolution": {
+    "width": 250,
+    "height": 122
+  },
+  "native_resolution": {
+    "width": 122,
+    "height": 250
+  },
+  "orientation": "landscape",
+  "native_orientation": "portrait",
+  "device_type": "epd2in15g",
+  "source": "display_handler",
+  "last_updated": 1703123456.789
+}
+```
+
+**Response Fields:**
+- `display_type` - Current display model (epd2in15g, epd7in3e, epd13in3E)
+- `resolution` - Current display resolution in landscape orientation
+- `native_resolution` - Native display resolution (before orientation conversion)
+- `orientation` - Current display orientation setting
+- `native_orientation` - Display's native orientation (portrait/landscape)
+- `device_type` - Device type from unified library
+- `source` - Data source (display_handler, settings_fallback)
+- `last_updated` - Timestamp of last update
+
+**Use Cases:**
+- **TouchDesigner integration** - Poll display info for UI configuration
+- **Remote monitoring** - Check display status and capabilities
+- **Orientation validation** - Verify current orientation settings
+- **Display type detection** - Identify connected display model
+
+**TouchDesigner Integration:**
+The display info API is designed for TouchDesigner polling. The TouchDesigner extension can automatically poll this endpoint to get real-time display information for UI configuration and status monitoring.
 
 ### File Management Behavior
 
