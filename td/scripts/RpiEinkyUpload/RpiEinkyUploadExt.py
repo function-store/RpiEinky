@@ -13,6 +13,7 @@ class RpiEinkyUploadExt:
 		self.webClient : webclientDAT = self.ownerComp.op('webclient1')
 		self.movieFileOut : moviefileoutTOP = self.ownerComp.op('moviefileout1')
 		self.movieFileIn : moviefileinTOP = self.ownerComp.op('moviefilein1')
+		self.fileInfo = self.ownerComp.op('null_fileinfo')
 		
 		
 	@property
@@ -21,10 +22,9 @@ class RpiEinkyUploadExt:
 
 	@property
 	def latestFilePath(self):
-		sorty = self.ownerComp.op('sort1')
-		path = sorty[1,'path'].val
+		path = self.fileInfo[1,'path'].val
 		return path
-
+	
 	@property
 	def isOnCook(self):
 		return self.ownerComp.par.Oncook.eval()
@@ -56,7 +56,7 @@ class RpiEinkyUploadExt:
 
 	def onParSend(self):
 		"""Handle the Send parameter - upload current image"""
-		if hasattr(self.image, 'save'):
+		if self.image is not None:
 			# Upload current image directly
 			self.saveImageToDisk(self.image)
 		else:
@@ -70,7 +70,7 @@ class RpiEinkyUploadExt:
 				return False
 			#self.movieFileIn.par.file.val = filepath
 			filename = os.path.basename(filepath)
-			
+			size = os.path.getsize(filepath)
 			# Use WebclientDAT request method for file upload
 			# Note: uploadFile parameter only works with PUT method
 			connection_id = self.webClient.request(
@@ -80,10 +80,7 @@ class RpiEinkyUploadExt:
 				uploadFile=filepath
 			)
 			
-			debug(f"Uploading file: {filename} (connection: {connection_id})")
-			
-			# Handle response
-			self._handle_response("File upload", connection_id)
+			debug(f"Uploading file: {filename}, size: {size} bytes (connection: {connection_id})")
 			
 			return True
 			
@@ -114,8 +111,6 @@ class RpiEinkyUploadExt:
 			
 			debug(f"Uploading text content... (connection: {connection_id})")
 			
-			# Handle response
-			self._handle_response("Text upload", connection_id)
 			
 			return True
 			
@@ -134,8 +129,6 @@ class RpiEinkyUploadExt:
 			
 			debug(f"ðŸ–¥ï¸ Clearing e-ink display screen... (connection: {connection_id})")
 			
-			# Handle response
-			self._handle_response("Clear display screen", connection_id)
 			
 			return True
 			
@@ -156,8 +149,6 @@ class RpiEinkyUploadExt:
 			
 			debug(f"Checking server status... (connection: {connection_id})")
 			
-			# Handle response
-			self._handle_response("Status check", connection_id)
 			
 			return True
 			
@@ -176,8 +167,6 @@ class RpiEinkyUploadExt:
 			
 			debug(f"Getting display info... (connection: {connection_id})")
 			
-			# Handle response
-			self._handle_response("Display info", connection_id)
 			
 			return True
 			
@@ -186,18 +175,15 @@ class RpiEinkyUploadExt:
 			return False
 			
 		
-	
+	def onStart(self):
+		if self.evalGetinfoonstart:
+			debug("📺 Getting display info on start")
+			self.get_display_info()
 	
 	def onWebClientConnect(self, webClientDAT, id):
 		"""Called when WebclientDAT connection is established"""
-		try:
-			debug("📺 Getting display info on connect")
-			# Just get display info once
-			if self.evalGetinfoonconnect:
-				self.get_display_info()
+		pass
 			
-		except Exception as e:
-			debug(f"❌ Connection handling error: {e}")
 	
 	def onWebClientDisconnect(self, webClientDAT, id):
 		"""Called when WebclientDAT connection is closed"""
@@ -259,9 +245,8 @@ class RpiEinkyUploadExt:
 			debug(f"TOP upload error: {e}")
 			return False
 	
-	def onNewFileFoundTable(self, dat):
-		latestFilePath = self.latestFilePath
-		debug(f"New file found: {latestFilePath}")
+	def onFileWriteFinished(self, dat):
+		latestFilePath = self.latestFilePath	
 		self.upload_file(latestFilePath)
 
 
@@ -322,7 +307,6 @@ class RpiEinkyUploadExt:
 		# Force cleanup by keeping only 1 file, or 0 to remove all
 		self.cleanup_pi_files(keep_count=0)
 
-
 	
 	def cleanup_local_temp(self):
 		"""Clean local temp folder"""
@@ -350,11 +334,11 @@ class RpiEinkyUploadExt:
 					except Exception as e:
 						debug(f"   Failed to remove {file.name}: {e}")
 			
-			debug(f"ðŸ§¹ Local temp cleanup: removed {files_removed} files from {temp_path}")
+			debug(f"Local temp cleanup: removed {files_removed} files from {temp_path}")
 			return files_removed
 			
 		except Exception as e:
-			debug(f"âŒ Local temp cleanup error: {e}")
+			debug(f"Local temp cleanup error: {e}")
 			return 0
 	
 	def cleanup_pi_files(self, keep_count=10):
@@ -373,26 +357,15 @@ class RpiEinkyUploadExt:
 				data=json.dumps(data)
 			)
 			
-			debug(f"ðŸ§¹ Pi cleanup request sent (keep {keep_count} files)...")
+			debug(f"Pi cleanup request sent (keep {keep_count} files)...")
 			
-			# Handle response
-			self._handle_response("Pi files cleanup", connection_id)
 			
 			return keep_count  # Return the keep count for now
 			
 		except Exception as e:
-			debug(f"âŒ Pi cleanup error: {e}")
+			debug(f"Pi cleanup error: {e}")
 			return 0
 	
-	
-
-	def _handle_response(self, operation_name, connection_id):
-		"""Handle WebclientDAT response using onResponse callback"""
-		debug(f"Request sent for {operation_name} with connection ID: {connection_id}")
-		# Note: Response handling should be implemented in the onResponse callback
-		# of the WebclientDAT, using the connection_id to match requests
-	
-
 	
 	def GetDisplayInfo(self):
 		"""Get current display information"""

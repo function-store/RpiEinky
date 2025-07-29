@@ -493,7 +493,9 @@ class EinkDisplayHandler(FileSystemEventHandler):
         """Reload settings from file (useful when settings change)"""
         self.load_settings()
         logger.info(f"Settings reloaded - Auto-display: {self.auto_display_uploads}, Crop mode: {self.image_crop_mode}, Orientation: {self.orientation}")
-        logger.info(f"DEBUG: Reloaded orientation value: '{self.orientation}' (type: {type(self.orientation)})")
+        
+        # Update display info with new settings
+        self.update_display_info()
     
     def restart_refresh_timer(self):
         """Restart the refresh timer with current settings"""
@@ -624,7 +626,7 @@ class EinkDisplayHandler(FileSystemEventHandler):
                 return rotated
             else:
                 # Unknown orientation, return original
-                logger.warning(f"Unknown orientation: '{orientation}', using landscape")
+                logger.warning(f"Unknown orientation: {orientation}, using landscape")
                 return image
                 
         except Exception as e:
