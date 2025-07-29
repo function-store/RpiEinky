@@ -185,13 +185,9 @@ class EinkDisplayHandler(FileSystemEventHandler):
                 logger.info(f"Command line override: enable_sleep_mode = {enable_sleep_mode_bool} (was {original_enable_sleep_mode})")
                 command_line_args_used = True
             
-        # Save settings to file if command line arguments were used OR if settings file doesn't exist
-        settings_file = Path(os.path.expanduser('~/watched_files')) / '.settings.json'
-        if command_line_args_used or not settings_file.exists():
-            if command_line_args_used:
-                logger.info("Command line arguments used - saving updated settings to file")
-            else:
-                logger.info("Settings file doesn't exist - creating it with current values")
+        # Save settings to file if command line arguments were used
+        if command_line_args_used:
+            logger.info("Command line arguments used - saving updated settings to file")
             self.save_settings_to_file()
         
         # Load fonts (fallback to default if Font.ttc not available)
@@ -393,45 +389,89 @@ class EinkDisplayHandler(FileSystemEventHandler):
         """Load settings from the settings file"""
         try:
             # Use the same path as the upload server
-            settings_file = Path(os.path.expanduser('~/watched_files')) / '.settings.json'
+            settings_file = Path(os.path.expanduser('~/.config/rpi-einky')) / 'settings.json'
+            
+            # Default settings that should always be present
+            default_settings = {
+                'auto_display_upload': True,
+                'image_crop_mode': 'center_crop',
+                'orientation': 'landscape',
+                'startup_delay_minutes': 1,
+                'refresh_interval_hours': 24,
+                'enable_startup_timer': True,
+                'enable_refresh_timer': True,
+                'enable_manufacturer_timing': False,
+                'enable_sleep_mode': True,
+                'selected_image': None
+            }
+            
+            # Try to load existing settings
+            loaded_settings = {}
+            settings_need_update = False
+            
             if settings_file.exists():
-                import json
-                with open(settings_file, 'r') as f:
-                    settings = json.load(f)
-                    self.auto_display_uploads = settings.get('auto_display_upload', True)
-                    self.image_crop_mode = settings.get('image_crop_mode', 'center_crop')
-                    
-                    # Load orientation setting
-                    self.orientation = settings.get('orientation', 'landscape')
-                    logger.info(f"Loaded orientation setting: {self.orientation}")
-                    
-                    # Load timing settings
-                    self.startup_delay_minutes = settings.get('startup_delay_minutes', 1)
-                    self.refresh_interval_hours = settings.get('refresh_interval_hours', 24)
-                    self.disable_startup_timer = settings.get('disable_startup_timer', False)
-                    self.disable_refresh_timer = settings.get('disable_refresh_timer', False)
-                    self.enable_manufacturer_timing = settings.get('enable_manufacturer_timing', False)
-                    self.enable_sleep_mode = settings.get('enable_sleep_mode', True)
-                    self.selected_image = settings.get('selected_image', None)
-                    
-                    logger.info(f"Settings loaded from {settings_file} - Auto-display: {self.auto_display_uploads}, Crop mode: {self.image_crop_mode}, Orientation: {self.orientation}, Selected image: {self.selected_image}")
-                    logger.info(f"Timing settings - Startup timer: {'DISABLED' if self.disable_startup_timer else 'ENABLED'}, Refresh timer: {'DISABLED' if self.disable_refresh_timer else 'ENABLED'}")
-                    logger.info(f"Timing values - Startup delay: {self.startup_delay_minutes}min, Refresh: {self.refresh_interval_hours}h")
-                    logger.info(f"LOAD_SETTINGS - disable_startup_timer value: {self.disable_startup_timer}")
-                    logger.info(f"LOAD_SETTINGS - disable_startup_timer type: {type(self.disable_startup_timer)}")
+                try:
+                    import json
+                    with open(settings_file, 'r') as f:
+                        content = f.read().strip()
+                        if content:  # File is not empty
+                            loaded_settings = json.loads(content)
+                            logger.info(f"Settings loaded from {settings_file}")
+                        else:
+                            # File is empty
+                            logger.warning(f"Settings file {settings_file} is empty, using defaults")
+                            settings_need_update = True
+                except (json.JSONDecodeError, FileNotFoundError) as e:
+                    # File is corrupted or can't be read
+                    logger.warning(f"Settings file {settings_file} is corrupted or unreadable: {e}, using defaults")
+                    settings_need_update = True
             else:
-                # Default settings
-                self.auto_display_uploads = True
-                self.image_crop_mode = 'center_crop'
-                self.orientation = 'landscape'
-                self.startup_delay_minutes = 1
-                self.refresh_interval_hours = 24
-                self.disable_startup_timer = False
-                self.disable_refresh_timer = False
-                self.enable_manufacturer_timing = False
-                self.enable_sleep_mode = True
-                self.selected_image = None
+                # File doesn't exist
                 logger.info(f"Settings file not found at {settings_file}, using defaults")
+                settings_need_update = True
+            
+            # Check if all required settings are present
+            if not settings_need_update:
+                for key, default_value in default_settings.items():
+                    if key not in loaded_settings:
+                        logger.warning(f"Missing setting '{key}' in settings file, using default: {default_value}")
+                        settings_need_update = True
+                        break
+            
+            # Merge loaded settings with defaults (loaded settings take precedence)
+            final_settings = default_settings.copy()
+            if loaded_settings:
+                final_settings.update(loaded_settings)
+            
+            # Apply settings to instance variables
+            self.auto_display_uploads = final_settings['auto_display_upload']
+            self.image_crop_mode = final_settings['image_crop_mode']
+            self.orientation = final_settings['orientation']
+            self.startup_delay_minutes = final_settings['startup_delay_minutes']
+            self.refresh_interval_hours = final_settings['refresh_interval_hours']
+            self.disable_startup_timer = not final_settings['enable_startup_timer']
+            self.disable_refresh_timer = not final_settings['enable_refresh_timer']
+            self.enable_manufacturer_timing = final_settings['enable_manufacturer_timing']
+            self.enable_sleep_mode = final_settings['enable_sleep_mode']
+            self.selected_image = final_settings['selected_image']
+            
+            logger.info(f"Final settings - Auto-display: {self.auto_display_uploads}, Crop mode: {self.image_crop_mode}, Orientation: {self.orientation}, Selected image: {self.selected_image}")
+            logger.info(f"Timing settings - Startup timer: {'DISABLED' if self.disable_startup_timer else 'ENABLED'}, Refresh timer: {'DISABLED' if self.disable_refresh_timer else 'ENABLED'}")
+            logger.info(f"Timing values - Startup delay: {self.startup_delay_minutes}min, Refresh: {self.refresh_interval_hours}h")
+            logger.info(f"LOAD_SETTINGS - disable_startup_timer value: {self.disable_startup_timer}")
+            logger.info(f"LOAD_SETTINGS - disable_startup_timer type: {type(self.disable_startup_timer)}")
+            
+            # Update settings file if it was missing, empty, corrupted, or had missing fields
+            if settings_need_update:
+                try:
+                    settings_file.parent.mkdir(parents=True, exist_ok=True)
+                    import json
+                    with open(settings_file, 'w') as f:
+                        json.dump(final_settings, f, indent=2)
+                    logger.info(f"Updated settings file with complete values: {list(final_settings.keys())}")
+                except Exception as e:
+                    logger.error(f"Error updating settings file: {e}")
+                    
         except Exception as e:
             logger.error(f"Error loading settings: {e}")
             # Fallback to defaults
@@ -480,15 +520,22 @@ class EinkDisplayHandler(FileSystemEventHandler):
         """Save current settings to the settings file"""
         try:
             # Use the same path as the upload server
-            settings_file = Path(os.path.expanduser('~/watched_files')) / '.settings.json'
+            settings_file = Path(os.path.expanduser('~/.config/rpi-einky')) / 'settings.json'
             logger.info(f"DEBUG: Saving settings to: {settings_file.absolute()}")
             
-            # Load existing settings
+            # Ensure the directory exists
+            settings_file.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Load existing settings if file exists
             settings = {}
             if settings_file.exists():
                 import json
-                with open(settings_file, 'r') as f:
-                    settings = json.load(f)
+                try:
+                    with open(settings_file, 'r') as f:
+                        settings = json.load(f)
+                except (json.JSONDecodeError, FileNotFoundError):
+                    # If file is corrupted or empty, start with empty dict
+                    settings = {}
             
             # Update settings with current values
             settings['auto_display_upload'] = self.auto_display_uploads
@@ -496,8 +543,8 @@ class EinkDisplayHandler(FileSystemEventHandler):
             settings['orientation'] = self.orientation
             settings['startup_delay_minutes'] = self.startup_delay_minutes
             settings['refresh_interval_hours'] = self.refresh_interval_hours
-            settings['disable_startup_timer'] = self.disable_startup_timer
-            settings['disable_refresh_timer'] = self.disable_refresh_timer
+            settings['enable_startup_timer'] = not self.disable_startup_timer
+            settings['enable_refresh_timer'] = not self.disable_refresh_timer
             settings['enable_manufacturer_timing'] = self.enable_manufacturer_timing
             settings['enable_sleep_mode'] = self.enable_sleep_mode
             if hasattr(self, 'selected_image'):
@@ -516,15 +563,22 @@ class EinkDisplayHandler(FileSystemEventHandler):
         """Save the selected image setting to the settings file"""
         try:
             # Use the same path as the upload server
-            settings_file = Path(os.path.expanduser('~/watched_files')) / '.settings.json'
+            settings_file = Path(os.path.expanduser('~/.config/rpi-einky')) / 'settings.json'
             logger.info(f"DEBUG: Saving selected image setting to: {settings_file.absolute()}")
             
-            # Load existing settings
+            # Ensure the directory exists
+            settings_file.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Load existing settings if file exists
             settings = {}
             if settings_file.exists():
                 import json
-                with open(settings_file, 'r') as f:
-                    settings = json.load(f)
+                try:
+                    with open(settings_file, 'r') as f:
+                        settings = json.load(f)
+                except (json.JSONDecodeError, FileNotFoundError):
+                    # If file is corrupted or empty, start with empty dict
+                    settings = {}
             
             # Update selected image
             settings['selected_image'] = filename
@@ -759,9 +813,13 @@ class EinkDisplayHandler(FileSystemEventHandler):
         file_path = Path(event.src_path)
         logger.info(f"New file detected: {file_path.name}")
         
-        # Check if this is a command file from the web interface
-        if file_path.name == '.display_command':
+        # Check if this is a command file from the commands directory
+        if 'commands' in str(file_path) and file_path.suffix == '.json':
             self._process_command_file(file_path)
+            return
+        
+        # Skip hidden files and thumbnails
+        if file_path.name.startswith('.') or '_thumb.' in file_path.name:
             return
         
         self._process_regular_file(file_path)
@@ -772,14 +830,14 @@ class EinkDisplayHandler(FileSystemEventHandler):
         
         file_path = Path(event.src_path)
         
-        # Check if this is a command file from the web interface
-        if file_path.name == '.display_command':
+        # Check if this is a command file from the commands directory
+        if 'commands' in str(file_path) and file_path.suffix == '.json':
             logger.info(f"Command file modified: {file_path.name}")
             self._process_command_file(file_path)
             return
     
     def _process_command_file(self, file_path):
-        """Process .display_command file"""
+        """Process command file from commands directory"""
         try:
             # Add a small delay to ensure file is fully written
             time.sleep(0.1)
@@ -1532,9 +1590,14 @@ Timing Features:
                                display_type=DISPLAY_TYPE)
     handler.orientation = ORIENTATION
     
-    # Set up file system observer
+    # Set up file system observer for both watched folder and commands directory
     observer = Observer()
     observer.schedule(handler, handler.watched_folder, recursive=False)
+    
+    # Also watch the commands directory for command files
+    commands_dir = Path(os.path.expanduser('~/.config/rpi-einky/commands'))
+    commands_dir.mkdir(parents=True, exist_ok=True)
+    observer.schedule(handler, str(commands_dir), recursive=False)
     
     try:
         observer.start()

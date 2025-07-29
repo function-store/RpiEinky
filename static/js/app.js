@@ -69,7 +69,7 @@ class EinkDisplayManager {
         });
         
         // Bind refresh timer checkbox to control interval field state
-        document.getElementById('disable-refresh-timer').addEventListener('change', () => {
+        document.getElementById('enable-refresh-timer').addEventListener('change', () => {
             this.updateRefreshIntervalFieldState();
         });
     }
@@ -742,8 +742,8 @@ class EinkDisplayManager {
         qualityValue.textContent = qualitySlider.value;
         
         // Set timing features
-        document.getElementById('disable-startup-timer').checked = settings.disable_startup_timer === true;
-        document.getElementById('disable-refresh-timer').checked = settings.disable_refresh_timer === true;
+        document.getElementById('enable-startup-timer').checked = settings.enable_startup_timer === true;
+        document.getElementById('enable-refresh-timer').checked = settings.enable_refresh_timer === true;
         document.getElementById('startup-delay').value = settings.startup_delay_minutes || 1;
         document.getElementById('refresh-interval').value = settings.refresh_interval_hours || 24;
         document.getElementById('enable-manufacturer-timing').checked = settings.enable_manufacturer_timing === true;
@@ -767,8 +767,8 @@ class EinkDisplayManager {
                 image_crop_mode: document.getElementById('image-crop-mode').value,
                 auto_display_upload: document.getElementById('auto-display-upload').checked,
                 thumbnail_quality: parseInt(document.getElementById('thumbnail-quality').value),
-                disable_startup_timer: document.getElementById('disable-startup-timer').checked,
-                disable_refresh_timer: document.getElementById('disable-refresh-timer').checked,
+                enable_startup_timer: document.getElementById('enable-startup-timer').checked,
+                enable_refresh_timer: document.getElementById('enable-refresh-timer').checked,
                 startup_delay_minutes: parseInt(document.getElementById('startup-delay').value),
                 refresh_interval_hours: parseInt(document.getElementById('refresh-interval').value),
                 enable_manufacturer_timing: document.getElementById('enable-manufacturer-timing').checked,
@@ -806,20 +806,20 @@ class EinkDisplayManager {
     }
     
     updateRefreshIntervalFieldState() {
-        const refreshTimerCheckbox = document.getElementById('disable-refresh-timer');
+        const refreshTimerCheckbox = document.getElementById('enable-refresh-timer');
         const refreshIntervalField = document.getElementById('refresh-interval');
         const refreshIntervalLabel = refreshIntervalField.previousElementSibling;
         
         if (refreshTimerCheckbox.checked) {
-            // Refresh timer is disabled - disable the interval field
-            refreshIntervalField.disabled = true;
-            refreshIntervalField.style.opacity = '0.5';
-            refreshIntervalLabel.style.opacity = '0.5';
-        } else {
             // Refresh timer is enabled - enable the interval field
             refreshIntervalField.disabled = false;
             refreshIntervalField.style.opacity = '1';
             refreshIntervalLabel.style.opacity = '1';
+        } else {
+            // Refresh timer is disabled - disable the interval field
+            refreshIntervalField.disabled = true;
+            refreshIntervalField.style.opacity = '0.5';
+            refreshIntervalLabel.style.opacity = '0.5';
         }
     }
     

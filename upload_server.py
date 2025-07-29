@@ -37,7 +37,9 @@ app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max file size
 # Configuration
 UPLOAD_FOLDER = os.path.expanduser('~/watched_files')
 THUMBNAILS_FOLDER = os.path.join(UPLOAD_FOLDER, '.thumbnails')
-SETTINGS_FILE = os.path.join(UPLOAD_FOLDER, '.settings.json')
+APP_CONFIG_DIR = os.path.expanduser('~/.config/rpi-einky')
+SETTINGS_FILE = os.path.join(APP_CONFIG_DIR, 'settings.json')
+COMMANDS_DIR = os.path.join(APP_CONFIG_DIR, 'commands')
 
 ALLOWED_EXTENSIONS = {
     'txt', 'md', 'py', 'js', 'html', 'css',  # Text files
@@ -54,8 +56,8 @@ DEFAULT_SETTINGS = {
     'max_file_size_mb': 16,           # Maximum file size in MB
     'startup_delay_minutes': 1,        # Startup delay before displaying latest file
     'refresh_interval_hours': 24,      # Refresh interval to prevent ghosting
-    'disable_startup_timer': False,    # Disable automatic startup display timer
-    'disable_refresh_timer': False,    # Disable automatic refresh timer
+    'enable_startup_timer': True,      # Enable automatic startup display timer
+    'enable_refresh_timer': True,      # Enable automatic refresh timer
     'enable_manufacturer_timing': False,  # Enable manufacturer timing requirements (180s minimum)
     'enable_sleep_mode': True,  # Enable sleep mode between operations (power efficiency)
     'orientation': 'landscape'  # Display orientation: 'landscape', 'portrait', 'landscape_flipped', 'portrait_flipped'
@@ -73,19 +75,54 @@ def ensure_upload_folder():
     """Create upload folder and thumbnails folder if they don't exist"""
     Path(UPLOAD_FOLDER).mkdir(parents=True, exist_ok=True)
     Path(THUMBNAILS_FOLDER).mkdir(parents=True, exist_ok=True)
+    Path(APP_CONFIG_DIR).mkdir(parents=True, exist_ok=True)
+    Path(COMMANDS_DIR).mkdir(parents=True, exist_ok=True)
 
 def load_settings():
     """Load settings from file or return defaults"""
     try:
         if os.path.exists(SETTINGS_FILE):
-            with open(SETTINGS_FILE, 'r') as f:
-                saved_settings = json.load(f)
-                # Merge with defaults to ensure all settings exist
-                settings = DEFAULT_SETTINGS.copy()
-                settings.update(saved_settings)
-                return settings
+            try:
+                with open(SETTINGS_FILE, 'r') as f:
+                    content = f.read().strip()
+                    if content:  # File is not empty
+                        saved_settings = json.loads(content)
+                        logger.info(f"Settings loaded from {SETTINGS_FILE}")
+                    else:
+                        # File is empty
+                        logger.warning(f"Settings file {SETTINGS_FILE} is empty, using defaults")
+                        saved_settings = {}
+            except (json.JSONDecodeError, FileNotFoundError) as e:
+                # File is corrupted or can't be read
+                logger.warning(f"Settings file {SETTINGS_FILE} is corrupted or unreadable: {e}, using defaults")
+                saved_settings = {}
         else:
-            return DEFAULT_SETTINGS.copy()
+            logger.info(f"Settings file not found at {SETTINGS_FILE}, using defaults")
+            saved_settings = {}
+        
+        # Check if all required settings are present
+        settings_need_update = False
+        for key, default_value in DEFAULT_SETTINGS.items():
+            if key not in saved_settings:
+                logger.warning(f"Missing setting '{key}' in settings file, using default: {default_value}")
+                settings_need_update = True
+                break
+        
+        # Merge with defaults to ensure all settings exist
+        settings = DEFAULT_SETTINGS.copy()
+        settings.update(saved_settings)
+        
+        # Update settings file if it was missing, empty, corrupted, or had missing fields
+        if settings_need_update:
+            try:
+                os.makedirs(os.path.dirname(SETTINGS_FILE), exist_ok=True)
+                with open(SETTINGS_FILE, 'w') as f:
+                    json.dump(settings, f, indent=2)
+                logger.info(f"Updated settings file with complete values: {list(settings.keys())}")
+            except Exception as e:
+                logger.error(f"Error updating settings file: {e}")
+        
+        return settings
     except Exception as e:
         logger.error(f"Error loading settings: {e}")
         return DEFAULT_SETTINGS.copy()
@@ -169,7 +206,7 @@ def trigger_settings_reload_and_redisplay():
         time.sleep(0.5)
         
         # Send a refresh command to the main handler
-        command_file = Path(UPLOAD_FOLDER) / '.display_command'
+        command_file = Path(COMMANDS_DIR) / 'refresh_display.json'
         command_data = {
             'action': 'refresh_display',
             'timestamp': time.time()
@@ -198,7 +235,7 @@ def display_file_on_eink(filename):
         time.sleep(0.1)
         
         # Write a display command for the main handler to execute
-        command_file = Path(UPLOAD_FOLDER) / '.display_command'
+        command_file = Path(COMMANDS_DIR) / 'display_file.json'
         command_data = {
             'action': 'display_file',
             'filename': filename,
@@ -391,31 +428,36 @@ def update_settings():
         
         current_settings = load_settings()
         
+        # Track which settings actually changed
+        changed_settings = []
+        
         # Validate and update settings
         for key, value in data.items():
             if key in DEFAULT_SETTINGS:
-                current_settings[key] = value
+                if key not in current_settings or current_settings[key] != value:
+                    current_settings[key] = value
+                    changed_settings.append(key)
             else:
                 logger.warning(f"Unknown setting key: {key}")
         
         # Save updated settings
         if save_settings(current_settings):
-            logger.info(f"Settings updated: {list(data.keys())}")
+            logger.info(f"Settings updated: {changed_settings}")
             
             # Check if any settings that require immediate action were changed
             immediate_action_settings = [
                 'orientation',           # Display refresh needed
                 'image_crop_mode',      # Display refresh needed
                 'enable_sleep_mode',    # Display refresh needed
-                'disable_refresh_timer', # Timer restart needed
+                'enable_refresh_timer', # Timer restart needed
                 'refresh_interval_hours', # Timer restart needed
                 'enable_manufacturer_timing' # Timer restart needed
             ]
-            immediate_action_changed = any(setting in data for setting in immediate_action_settings)
+            immediate_action_changed = any(setting in immediate_action_settings for setting in changed_settings)
             
             if immediate_action_changed:
-                changed_settings = [setting for setting in immediate_action_settings if setting in data]
-                logger.info(f"Settings requiring immediate action changed: {changed_settings} - triggering refresh display")
+                relevant_changes = [setting for setting in changed_settings if setting in immediate_action_settings]
+                logger.info(f"Settings requiring immediate action changed: {relevant_changes} - triggering refresh display")
                 try:
                     import threading
                     # Run re-display in background thread so web interface doesn't block
@@ -583,7 +625,7 @@ def clear_screen():
     """Clear the e-ink display screen (without removing files)"""
     try:
         # Send clear command to the main display handler instead of direct EPD access
-        command_file = Path(UPLOAD_FOLDER) / '.display_command'
+        command_file = Path(COMMANDS_DIR) / 'clear_display.json'
         command_data = {
             'action': 'clear_display',
             'timestamp': time.time()

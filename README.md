@@ -66,8 +66,8 @@ The system includes configurable timing features to improve display reliability 
 - **Configuration**: Use `--refresh-interval <hours>` to set custom interval (e.g., `--refresh-interval 12` for 12 hours)
 
 #### **🎛️ Timing Control**
-- **Startup Timer**: Use `--disable-startup-timer` flag to disable startup timer (show priority file immediately)
-- **Refresh Timer**: Use `--disable-refresh-timer` flag to disable automatic refresh
+- **Startup Timer**: Use `--enable-startup-timer false` to disable startup timer (show priority file immediately)
+- **Refresh Timer**: Use `--enable-refresh-timer false` to disable automatic refresh
 - **Startup Delay**: Use `--startup-delay <minutes>` to set custom startup delay
 - **Refresh Interval**: Use `--refresh-interval <hours>` to set custom refresh interval
 - **Independent Control**: Each timer can be enabled/disabled separately
@@ -132,7 +132,7 @@ Access settings via the **Settings** button in the web interface:
 - **Disabled:** Display stays active between operations (faster but uses more power)
 
 ### 📁 **Settings Storage**
-Settings are saved to `~/watched_files/.settings.json` and persist across restarts.
+Settings are saved to `~/.config/rpi-einky/settings.json` and persist across restarts.
 
 ## 🛠️ Hardware Requirements
 
@@ -369,7 +369,7 @@ python display_latest.py --clear-start --no-clear-exit  # Clear on start only
 python display_latest.py --orientation landscape    # Normal (not upside-down)
 
 # Control timing features
-python display_latest.py --disable-startup-timer  # Disable startup timer (show priority file immediately)
+python display_latest.py --enable-startup-timer false  # Disable startup timer (show priority file immediately)
 python display_latest.py --startup-delay 5       # 5-minute startup delay (welcome screen → wait 5 min → priority file)
 python display_latest.py --refresh-interval 12   # Set refresh interval to 12 hours
 
@@ -389,8 +389,8 @@ python display_latest.py -d ~/welcome.jpg -f ~/my_files --clear-start --no-clear
 | `--clear-start` | - | Clear screen on startup | False |
 | `--no-clear-exit` | - | Don't clear screen when exiting | False |
 | `--orientation` | - | Display orientation (landscape, landscape_upside_down, portrait, portrait_upside_down) | landscape |
-| `--disable-startup-timer` | - | Disable automatic startup display timer | False |
-| `--disable-refresh-timer` | - | Disable automatic refresh timer | False |
+| `--enable-startup-timer` | - | Enable automatic startup display timer (true/false) | true |
+| `--enable-refresh-timer` | - | Enable automatic refresh timer (true/false) | true |
 | `--startup-delay` | - | Minutes to wait before displaying priority file on startup (shows welcome screen first) | 1 |
 | `--refresh-interval` | - | Hours between display refreshes to prevent ghosting | 24 |
 | `--enable-manufacturer-timing` | - | Enable manufacturer timing requirements (180s minimum) | False |
@@ -979,7 +979,7 @@ free -h
 **Auto-display not working:**
 ```bash
 # Check if auto-display is enabled in settings
-cat ~/watched_files/.settings.json
+cat ~/.config/rpi-einky/settings.json
 
 # Check display monitor logs for auto-display messages
 # Look for: "Auto-displayed file:" or "Auto-display disabled"
@@ -988,16 +988,16 @@ cat ~/watched_files/.settings.json
 **Settings not saving:**
 ```bash
 # Check settings file permissions
-ls -la ~/watched_files/.settings.json
+ls -la ~/.config/rpi-einky/settings.json
 
 # Check if settings file exists
-cat ~/watched_files/.settings.json
+cat ~/.config/rpi-einky/settings.json
 ```
 
 **Image processing issues:**
 ```bash
 # Verify crop mode setting
-grep "image_crop_mode" ~/watched_files/.settings.json
+grep "image_crop_mode" ~/.config/rpi-einky/settings.json
 
 # Check display logs for crop mode messages
 # Look for: "Center-cropped image" or "Letterboxed image"
@@ -1110,7 +1110,9 @@ RpiEinky/
 ├── setup_nginx.sh                 # Nginx reverse proxy setup script (optional)
 ├── eink-display.service           # Systemd service file for auto-start
 ├── setup_startup.sh               # Automated setup script for auto-start
-├── .settings.json                 # Web interface settings (auto-generated)
+└── ~/.config/rpi-einky/          # Application configuration directory
+    ├── settings.json              # Web interface settings (auto-generated)
+    └── commands/                  # Command files for display control
 ├── test_display_system.py         # Test file generator
 ├── test_upload_server.py          # Upload server test script
 ├── templates/                     # Web interface templates
@@ -1466,8 +1468,8 @@ python display_latest.py --orientation portrait
 python display_latest.py --orientation portrait_upside_down
 
 # Control timing features
-python display_latest.py --disable-startup-timer  # Disable startup timer (show priority file immediately)
-python display_latest.py --disable-refresh-timer  # Disable refresh timer only
+python display_latest.py --enable-startup-timer false  # Disable startup timer (show priority file immediately)
+python display_latest.py --enable-refresh-timer false  # Disable refresh timer only
 python display_latest.py --startup-delay 5       # 5-minute startup delay (welcome screen → wait 5 min → priority file)
 python display_latest.py --refresh-interval 12   # 12-hour refresh interval
 
@@ -1476,7 +1478,7 @@ python display_latest.py --enable-manufacturer-timing  # Enable 180s minimum ref
 python display_latest.py --disable-sleep-mode         # Disable sleep mode (faster)
 
 # Full featured: custom folder, initial file, controlled clearing, timing
-python display_latest.py -f ~/display_queue -d ~/status.txt --clear-start --no-clear-exit --orientation portrait --startup-delay 2 --refresh-interval 6 --disable-startup-timer --enable-manufacturer-timing
+python display_latest.py -f ~/display_queue -d ~/status.txt --clear-start --no-clear-exit --orientation portrait --startup-delay 2 --refresh-interval 6 --enable-startup-timer false --enable-manufacturer-timing
 
 # Just clear the display
 python clear_display.py
@@ -1488,7 +1490,7 @@ python display_latest.py \
   --clear-start \
   --no-clear-exit \
   --orientation portrait \
-  --disable-startup-timer \
+  --enable-startup-timer false \
   --refresh-interval 12 \
   --enable-manufacturer-timing \
   --disable-sleep-mode
