@@ -464,6 +464,22 @@ def update_settings():
                     thread = threading.Thread(target=trigger_settings_reload_and_redisplay, daemon=True)
                     thread.start()
                     logger.info("Started background re-display due to settings change")
+                    
+                    # If orientation changed, also update display info
+                    if 'orientation' in changed_settings:
+                        logger.info("Orientation changed - updating display info")
+                        try:
+                            command_file = Path(COMMANDS_DIR) / 'update_display_info.json'
+                            command_data = {
+                                'action': 'update_display_info',
+                                'timestamp': time.time()
+                            }
+                            with open(command_file, 'w') as f:
+                                json.dump(command_data, f)
+                            logger.info(f"Sent update display info command to {command_file}")
+                        except Exception as e:
+                            logger.error(f"Error sending update display info command: {e}")
+                            
                 except Exception as e:
                     logger.warning(f"Failed to start background re-display after settings change: {e}")
             else:
@@ -763,6 +779,77 @@ def serve_file(filename):
         return send_from_directory(UPLOAD_FOLDER, filename)
     except Exception:
         return '', 404
+
+@app.route('/display_info', methods=['GET'])
+def get_display_info():
+    """Get display information including resolution"""
+    try:
+        settings = load_settings()
+        display_type = settings.get('display_type', 'epd2in15g')
+        
+        display_info_file = Path(os.path.expanduser('~/.config/rpi-einky/display_info.json'))
+        
+        if display_info_file.exists():
+            try:
+                with open(display_info_file, 'r') as f:
+                    display_data = json.load(f)
+                    logger.info(f"Loaded display info from file: {display_data}")
+                    return jsonify(display_data), 200
+            except Exception as e:
+                logger.warning(f"Could not read display info file: {e}")
+        
+        command_file = Path(COMMANDS_DIR) / 'get_display_info.json'
+        command_data = {
+            'action': 'get_display_info',
+            'timestamp': time.time()
+        }
+        
+        try:
+            with open(command_file, 'w') as f:
+                json.dump(command_data, f)
+            
+            time.sleep(0.2)
+            
+            response_file = Path(COMMANDS_DIR) / 'display_info_response.json'
+            if response_file.exists():
+                try:
+                    with open(response_file, 'r') as f:
+                        display_data = json.load(f)
+                    
+                    response_file.unlink(missing_ok=True)
+                    
+                    logger.info(f"Got display info from handler: {display_data}")
+                    return jsonify(display_data), 200
+                except Exception as e:
+                    logger.warning(f"Could not read display info response: {e}")
+                    response_file.unlink(missing_ok=True)
+        except Exception as e:
+            logger.warning(f"Could not send display info command: {e}")
+        
+        logger.info(f"Using settings-based display info for {display_type}")
+        
+        orientation = settings.get('orientation', 'landscape')
+        
+        display_resolutions = {
+            'epd2in15g': {'width': 250, 'height': 122},
+            'epd7in3e': {'width': 800, 'height': 480},
+            'epd13in3E': {'width': 1872, 'height': 1404}
+        }
+        
+        resolution = display_resolutions.get(display_type, {'width': 250, 'height': 122})
+        
+        return jsonify({
+            'display_type': display_type,
+            'resolution': resolution,
+            'native_resolution': resolution,
+            'orientation': orientation,
+            'native_orientation': 'landscape',
+            'source': 'settings_fallback'
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error getting display info: {e}")
+        return jsonify({'error': str(e)}), 500
 
 # ============ WEB INTERFACE ROUTES ============
 

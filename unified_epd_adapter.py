@@ -67,6 +67,12 @@ class EPDAdapter(ABC):
     
     @property
     @abstractmethod
+    def display_type(self) -> str:
+        """Display type"""
+        pass
+
+    @property
+    @abstractmethod
     def width(self) -> int:
         """Display width"""
         pass
@@ -153,6 +159,10 @@ class EPD2in15gAdapter(EPDAdapter):
             logger.error("epd2in15g module not found. Make sure waveshare_epd is in your path.")
             raise
     
+    @property
+    def display_type(self) -> str:
+        return "epd2in15g"
+    
     def init(self) -> int:
         """Initialize the display"""
         return self._epd.init()
@@ -215,6 +225,10 @@ class EPD13in3EAdapter(EPDAdapter):
         except ImportError:
             logger.error("epd13in3E module not found. Make sure it's in your path.")
             raise
+    
+    @property
+    def display_type(self) -> str:
+        return "epd13in3E"
     
     def init(self) -> int:
         """Initialize the display"""
@@ -279,6 +293,10 @@ class EPD7in3eAdapter(EPDAdapter):
             logger.error("epd7in3e module not found. Make sure waveshare_epd is in your path.")
             raise
     
+    @property
+    def display_type(self) -> str:
+        return "epd7in3e"
+    
     def init(self) -> int:
         """Initialize the display"""
         return self._epd.init()
@@ -328,6 +346,7 @@ class EPD7in3eAdapter(EPDAdapter):
     @property
     def native_orientation(self) -> str:
         return "landscape"
+
 
 
 class UnifiedEPD:

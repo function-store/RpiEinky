@@ -9,11 +9,24 @@ class EinkDisplayManager {
         this.init();
     }
     
-    init() {
+    async init() {
+        // Bind events first
         this.bindEvents();
-        this.loadFiles();
-        this.checkServerStatus();
         
+        // Initial status check
+        await this.checkServerStatus();
+        
+        // Load display info
+        await this.loadDisplayInfo();
+        
+        // Load initial files
+        await this.loadFiles();
+        
+        // Start polling for updates
+        this.startPolling();
+    }
+    
+    startPolling() {
         // Check status periodically
         setInterval(() => this.checkServerStatus(), 30000);
         
@@ -642,23 +655,57 @@ class EinkDisplayManager {
     async checkServerStatus() {
         try {
             const response = await fetch('/status');
-            const statusIndicator = document.getElementById('status-indicator');
-            const statusDot = statusIndicator.querySelector('.status-dot');
-            const statusText = statusIndicator.querySelector('.status-text');
-            
             if (response.ok) {
-                statusDot.className = 'status-dot connected';
-                statusText.textContent = 'Connected';
+                const status = await response.json();
+                this.updateStatusIndicator('connected');
+                return true;
             } else {
-                throw new Error('Server error');
+                this.updateStatusIndicator('error');
+                return false;
             }
         } catch (error) {
-            const statusIndicator = document.getElementById('status-indicator');
-            const statusDot = statusIndicator.querySelector('.status-dot');
-            const statusText = statusIndicator.querySelector('.status-text');
-            
+            console.error('Server status check failed:', error);
+            this.updateStatusIndicator('error');
+            return false;
+        }
+    }
+    
+    updateStatusIndicator(status) {
+        const statusIndicator = document.getElementById('status-indicator');
+        const statusDot = statusIndicator.querySelector('.status-dot');
+        const statusText = statusIndicator.querySelector('.status-text');
+        
+        if (status === 'connected') {
+            statusDot.className = 'status-dot connected';
+            statusText.textContent = 'Connected';
+        } else if (status === 'error') {
             statusDot.className = 'status-dot error';
             statusText.textContent = 'Connection Error';
+        } else {
+            statusDot.className = 'status-dot';
+            statusText.textContent = 'Connecting...';
+        }
+    }
+    
+    async loadDisplayInfo() {
+        try {
+            const response = await fetch('/display_info');
+            if (response.ok) {
+                const displayInfo = await response.json();
+                const resolutionElement = document.getElementById('display-resolution');
+                const displayInfoElement = document.getElementById('display-info');
+                
+                if (resolutionElement && displayInfoElement) {
+                    const { resolution, display_type } = displayInfo;
+                    resolutionElement.textContent = `${resolution.width}×${resolution.height}`;
+                    displayInfoElement.style.display = 'flex';
+                    
+                    // Add tooltip with more details
+                    displayInfoElement.title = `${display_type} display (${resolution.width}×${resolution.height} landscape)`;
+                }
+            }
+        } catch (error) {
+            console.error('Failed to load display info:', error);
         }
     }
     

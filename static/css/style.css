@@ -53,6 +53,12 @@ body {
     align-items: center;
 }
 
+.header-info {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
 .header h1 {
     font-size: 2rem;
     font-weight: 700;
@@ -98,6 +104,23 @@ body {
 
 .polling-indicator i {
     color: var(--primary-color);
+}
+
+.display-info {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    padding: 4px 8px;
+    background: var(--bg-color);
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+}
+
+.display-info i {
+    color: var(--secondary-color);
+    font-size: 0.75rem;
 }
 
 @keyframes pulse {

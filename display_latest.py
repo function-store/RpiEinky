@@ -261,6 +261,9 @@ class EinkDisplayHandler(FileSystemEventHandler):
         logger.info(f"Sleep mode: {'ENABLED' if self.enable_sleep_mode else 'DISABLED'}")
         logger.info(f"Display dimensions - Width: {self.epd.landscape_width}, Height: {self.epd.landscape_height}")
         logger.info(f"FINAL TIMING SETTINGS - Startup timer: {'DISABLED' if self.disable_startup_timer else 'ENABLED'}, Refresh timer: {'DISABLED' if self.disable_refresh_timer else 'ENABLED'}")
+        
+        # Save display info for web server access
+        self._save_display_info()
     
 
     
@@ -490,6 +493,7 @@ class EinkDisplayHandler(FileSystemEventHandler):
         """Reload settings from file (useful when settings change)"""
         self.load_settings()
         logger.info(f"Settings reloaded - Auto-display: {self.auto_display_uploads}, Crop mode: {self.image_crop_mode}, Orientation: {self.orientation}")
+        logger.info(f"DEBUG: Reloaded orientation value: '{self.orientation}' (type: {type(self.orientation)})")
     
     def restart_refresh_timer(self):
         """Restart the refresh timer with current settings"""
@@ -620,7 +624,7 @@ class EinkDisplayHandler(FileSystemEventHandler):
                 return rotated
             else:
                 # Unknown orientation, return original
-                logger.warning(f"Unknown orientation: {orientation}, using landscape")
+                logger.warning(f"Unknown orientation: '{orientation}', using landscape")
                 return image
                 
         except Exception as e:
@@ -710,7 +714,7 @@ class EinkDisplayHandler(FileSystemEventHandler):
             return False
     
     def display_buffer(self, image):
-        """Display image buffer with always-on sleep mode and optional timing restrictions"""
+        """Display an image buffer on the e-ink display"""
         try:
             # Check manufacturer timing requirements if enabled
             if self.enable_manufacturer_timing:
@@ -720,9 +724,9 @@ class EinkDisplayHandler(FileSystemEventHandler):
                     logger.warning(f"Display refresh too soon. Must wait {remaining_time:.1f} more seconds (manufacturer requirement: 180s minimum)")
                     return False
             
-            # Wake display from sleep mode if sleep mode is enabled
+            # Wake up display if sleep mode is enabled
             if self.enable_sleep_mode:
-                logger.info("Starting display operation - waking display from sleep...")
+                logger.info("Starting display operation (sleep mode enabled)...")
                 try:
                     self.epd.init()
                     time.sleep(0.5)  # Brief delay after wake
@@ -732,9 +736,7 @@ class EinkDisplayHandler(FileSystemEventHandler):
             else:
                 logger.info("Starting display operation (sleep mode disabled)...")
             
-            # Apply orientation
-            image = self.apply_orientation(image)
-
+            # Display the image (orientation already applied)
             logger.info("Calling epd.display()...")
             self.epd.display(self.epd.getbuffer(image))
             
@@ -762,8 +764,7 @@ class EinkDisplayHandler(FileSystemEventHandler):
                 try:
                     self.reinitialize_display()
                     # Try again after reinitializing
-                    # Apply orientation again after reinitialization
-                    image = self.apply_orientation(image)
+                    # Don't apply orientation again - image is already oriented
                     self.epd.display(self.epd.getbuffer(image))
                     if self.enable_sleep_mode:
                         try:
@@ -908,6 +909,16 @@ class EinkDisplayHandler(FileSystemEventHandler):
                     self.current_displayed_file = None
                 except Exception as e:
                     logger.error(f"Error clearing display: {e}")
+            elif action == 'get_display_info':
+                # Send display info response
+                logger.info("Executing get display info command")
+                self._send_display_info_response()
+            elif action == 'update_display_info':
+                # Update display info with current settings
+                logger.info("Executing update display info command")
+                self.update_display_info()
+            else:
+                logger.warning(f"Unknown command action: {action}")
             
             # Clean up command file
             file_path.unlink()
@@ -1026,7 +1037,7 @@ class EinkDisplayHandler(FileSystemEventHandler):
                     image = image.convert('RGB')
             
 
-            # Apply orientation
+            # Apply orientation first, then resize to fit
             image = self.apply_orientation(image)
             logger.info(f"After orientation: {image.size}")
 
@@ -1034,18 +1045,19 @@ class EinkDisplayHandler(FileSystemEventHandler):
             processed_image = self.resize_image_to_fit(image)
             logger.info(f"After resize: {processed_image.size}")
             
-            # If the processed image is exactly display size, use it directly
-            if processed_image.size == (self.epd.landscape_width, self.epd.landscape_height):
-                display_image = processed_image
-                logger.info(f"Using processed image directly: {display_image.size}")
-            else:
-                # Create display image and center the processed image
-                display_image = Image.new('RGB', (self.epd.landscape_width, self.epd.landscape_height), self.epd.WHITE)
-                x_offset = (self.epd.landscape_width - processed_image.width) // 2
-                y_offset = (self.epd.landscape_height - processed_image.height) // 2
-                display_image.paste(processed_image, (x_offset, y_offset))
-                logger.info(f"Created display image: {display_image.size}, offset: ({x_offset}, {y_offset})")
+            # Get the correct display dimensions based on orientation
+
+            display_width = self.epd.landscape_width
+            display_height = self.epd.landscape_height
             
+            # # Create display image and center the processed image
+            # display_image = Image.new('RGB', (display_width, display_height), self.epd.WHITE)
+            # x_offset = (display_width - processed_image.width) // 2
+            # y_offset = (display_height - processed_image.height) // 2
+            # display_image.paste(processed_image, (x_offset, y_offset))
+            # logger.info(f"Created display image: {display_image.size}, offset: ({x_offset}, {y_offset})")
+            
+            display_image = processed_image
             success = self.display_buffer(display_image)
             if success:
                 logger.info(f"Displayed image: {file_path.name} (original: {original_size}, final: {display_image.size})")
@@ -1108,9 +1120,6 @@ class EinkDisplayHandler(FileSystemEventHandler):
                     draw.text((5, y_pos), line, font=self.font_small, fill=self.epd.BLACK)
                     y_pos += line_height
             
-            # Apply orientation to the display image
-            display_image = self.apply_orientation(display_image)
-            
             success = self.display_buffer(display_image)
             if success:
                 logger.info(f"Displayed text file: {file_path.name}")
@@ -1147,9 +1156,6 @@ class EinkDisplayHandler(FileSystemEventHandler):
                     x_offset = (self.epd.landscape_width - pdf_image.width) // 2
                     y_offset = (self.epd.landscape_height - pdf_image.height) // 2
                     display_image.paste(pdf_image, (x_offset, y_offset))
-                    
-                    # Apply orientation to the display image
-                    display_image = self.apply_orientation(display_image)
                     
                     success = self.display_buffer(display_image)
                     if success:
@@ -1213,9 +1219,6 @@ class EinkDisplayHandler(FileSystemEventHandler):
                 
                 y_pos += 5  # Extra spacing
             
-            # Apply orientation to the display image
-            display_image = self.apply_orientation(display_image)
-            
             success = self.display_buffer(display_image)
             if success:
                 logger.info(f"Displayed file info: {file_path.name}")
@@ -1259,9 +1262,6 @@ class EinkDisplayHandler(FileSystemEventHandler):
             if current_line and y_pos <= self.epd.landscape_height - 30:
                 draw.text((5, y_pos), current_line.strip(), 
                         font=self.font_small, fill=self.epd.BLACK)
-            
-            # Apply orientation to the display image
-            display_image = self.apply_orientation(display_image)
             
             self.display_buffer(display_image)
             logger.error(f"Displayed error for: {filename}")
@@ -1309,9 +1309,6 @@ class EinkDisplayHandler(FileSystemEventHandler):
             draw.text((5, y_pos), "Connect to this IP address", font=self.font_small, fill=self.epd.BLACK)
             y_pos += 15
             draw.text((5, y_pos), "for file uploads", font=self.font_small, fill=self.epd.BLACK)
-            
-            # Apply orientation to the display image
-            display_image = self.apply_orientation(display_image)
             
             self.display_buffer(display_image)
             logger.info(f"Displayed IP address: {ip_address} (hostname: {hostname})")
@@ -1363,9 +1360,6 @@ class EinkDisplayHandler(FileSystemEventHandler):
             y_pos += 20
             draw.text((5, y_pos), "Ready for uploads!", font=self.font_medium, fill=self.epd.RED)
             
-            # Apply orientation to the display image
-            display_image = self.apply_orientation(display_image)
-            
             self.display_buffer(display_image)
             logger.info(f"Displayed welcome screen - IP: {ip_address}, Web: {web_url}")
             
@@ -1375,6 +1369,12 @@ class EinkDisplayHandler(FileSystemEventHandler):
     
     def resize_image_to_fit(self, image):
         """Resize image to fit display while maintaining aspect ratio, with configurable crop mode"""
+        # Get the correct display dimensions based on orientation
+        # orientation = getattr(self, 'orientation', 'landscape')
+        # if orientation in ['portrait', 'portrait_flipped']:
+        #     display_width = self.epd.landscape_height  # Swap dimensions for portrait
+        #     display_height = self.epd.landscape_width
+        # else:
         display_width = self.epd.landscape_width
         display_height = self.epd.landscape_height
         
@@ -1417,6 +1417,73 @@ class EinkDisplayHandler(FileSystemEventHandler):
             
             logger.info(f"Letterboxed image from {image.size} to {resized_image.size} (scale: {scale:.2f})")
             return resized_image
+    
+    def update_display_info(self):
+        """Update display info file with current settings"""
+        try:
+            self._save_display_info()
+            logger.info("Display info updated with current settings")
+        except Exception as e:
+            logger.error(f"Error updating display info: {e}")
+    
+    def _send_display_info_response(self):
+        """Send display info response to the web server"""
+        try:
+            # Get actual display information from the unified EPD library
+            display_info = {
+                'display_type': getattr(self.epd, 'display_type', 'epd2in15g'),
+                'resolution': {
+                    'width': getattr(self.epd, 'landscape_width', 250),
+                    'height': getattr(self.epd, 'landscape_height', 122)
+                },
+                'native_resolution': {
+                    'width': getattr(self.epd, 'width', 250),
+                    'height': getattr(self.epd, 'height', 122)
+                },
+                'orientation': getattr(self, 'orientation', 'landscape'),
+                'native_orientation': getattr(self.epd, 'native_orientation', 'landscape'),
+                'source': 'display_handler'
+            }
+            
+            # Write response file for web server to read
+            response_file = Path(os.path.expanduser('~/.config/rpi-einky/commands/display_info_response.json'))
+            with open(response_file, 'w') as f:
+                json.dump(display_info, f, indent=2)
+            
+            logger.info(f"Sent display info response: {display_info}")
+            
+        except Exception as e:
+            logger.error(f"Error sending display info response: {e}")
+    
+    def _save_display_info(self):
+        """Save display info to persistent file for web server access"""
+        try:
+            # Get actual display information from the unified EPD library
+            display_info = {
+                'display_type': getattr(self.epd, 'display_type', 'epd2in15g'),
+                'resolution': {
+                    'width': getattr(self.epd, 'landscape_width', 250),
+                    'height': getattr(self.epd, 'landscape_height', 122)
+                },
+                'native_resolution': {
+                    'width': getattr(self.epd, 'width', 250),
+                    'height': getattr(self.epd, 'height', 122)
+                },
+                'orientation': getattr(self, 'orientation', 'landscape'),
+                'native_orientation': getattr(self.epd, 'native_orientation', 'landscape'),
+                'source': 'display_handler',
+                'last_updated': time.time()
+            }
+            
+            # Save to persistent file
+            display_info_file = Path(os.path.expanduser('~/.config/rpi-einky/display_info.json'))
+            with open(display_info_file, 'w') as f:
+                json.dump(display_info, f, indent=2)
+            
+            logger.info(f"Saved display info: {display_info}")
+            
+        except Exception as e:
+            logger.error(f"Error saving display info: {e}")
     
     def cleanup(self, force_clear=None):
         """Clean up resources"""
@@ -1480,7 +1547,7 @@ Timing Features:
     parser.add_argument('--test-orientation', choices=['landscape', 'landscape_flipped', 'portrait', 'portrait_flipped'],
                         help='Test orientation by displaying a test image immediately and exiting')
     parser.add_argument('--orientation', choices=['landscape', 'landscape_flipped', 'portrait', 'portrait_flipped'],
-                        default='landscape', help='Display orientation (default: landscape)')
+                        help='Display orientation (default: from settings file)')
     parser.add_argument('--disable-startup-timer', type=str, choices=['true', 'false'], default=None,
                        help='Set disable_startup_timer (true/false)')
     parser.add_argument('--disable-refresh-timer', type=str, choices=['true', 'false'], default=None,
@@ -1555,7 +1622,7 @@ Timing Features:
     
     # Configuration
     WATCHED_FOLDER = os.path.expanduser(args.folder)
-    ORIENTATION = args.orientation
+    ORIENTATION = args.orientation if args.orientation is not None else 'landscape'  # Fallback for None
     CLEAR_ON_START = args.clear_start
     CLEAR_ON_EXIT = not args.no_clear_exit
     DISABLE_STARTUP_TIMER = args.disable_startup_timer
@@ -1588,7 +1655,13 @@ Timing Features:
                                enable_manufacturer_timing=ENABLE_MANUFACTURER_TIMING,
                                enable_sleep_mode=ENABLE_SLEEP_MODE,
                                display_type=DISPLAY_TYPE)
-    handler.orientation = ORIENTATION
+    
+    # Only override orientation if explicitly provided via command line
+    if args.orientation is not None:  # Only override if explicitly provided
+        handler.orientation = ORIENTATION
+        logger.info(f"Orientation overridden by command line argument: {ORIENTATION}")
+    else:
+        logger.info(f"Using orientation from settings file: {handler.orientation}")
     
     # Set up file system observer for both watched folder and commands directory
     observer = Observer()

@@ -143,29 +143,15 @@ class RpiEinkyUploadExt:
 			debug(f"Clear display screen error: {e}")
 			return False
 	
-	def clear_display(self):
-		"""Clear the e-ink display by removing all files from Pi (legacy method)"""
-		try:
-			debug("ðŸ§¹ Clearing display by removing all files from Pi...")
-			
-			# Use cleanup with keep_count=0 to remove all files
-			# This effectively "clears" the display since no files remain
-			self.cleanup_pi_files(keep_count=0)
-			
-			debug(f"Display cleared by removing all Pi files")
-			return True
-			
-		except Exception as e:
-			debug(f"Clear display error: {e}")
-			return False
+
 	
 	def check_status(self):
 		"""Check the server status"""
 		try:
 			# Use WebclientDAT request method for status check
 			connection_id = self.webClient.request(
-				url=f'{self.server_url}/status',
-				method='GET'
+				f'{self.server_url}/status',
+				'GET'
 			)
 			
 			debug(f"Checking server status... (connection: {connection_id})")
@@ -178,6 +164,73 @@ class RpiEinkyUploadExt:
 		except Exception as e:
 			debug(f"Status check error: {e}")
 			return False
+	
+	def get_display_info(self):
+		"""Get display information including resolution"""
+		try:
+			# Use WebclientDAT request method for display info
+			connection_id = self.webClient.request(
+				f'{self.server_url}/display_info',
+				'GET'
+			)
+			
+			debug(f"Getting display info... (connection: {connection_id})")
+			
+			# Handle response
+			self._handle_response("Display info", connection_id)
+			
+			return True
+			
+		except Exception as e:
+			debug(f"Display info error: {e}")
+			return False
+			
+		
+	
+	
+	def onWebClientConnect(self, webClientDAT, id):
+		"""Called when WebclientDAT connection is established"""
+		try:
+			debug("📺 Getting display info on connect")
+			# Just get display info once
+			if self.evalGetinfoonconnect:
+				self.get_display_info()
+			
+		except Exception as e:
+			debug(f"❌ Connection handling error: {e}")
+	
+	def onWebClientDisconnect(self, webClientDAT, id):
+		"""Called when WebclientDAT connection is closed"""
+		debug("🔌 WebclientDAT disconnected")
+	
+	def onWebClientResponse(self, webClientDAT, statusCode, headerDict, data, id):
+		"""Called when response is received from server"""
+		try:
+			if statusCode['code'] == 200:
+				debug(f"✅ Request successful (ID: {id})")
+				if data:
+					try:
+						response_data = json.loads(data)
+						
+						# Handle display info response
+						if 'resolution' in response_data and 'display_type' in response_data:
+							self._handle_display_info_response(response_data)
+						# Handle other responses
+						elif 'filename' in response_data:
+							debug(f"   File: {response_data['filename']}")
+						elif 'message' in response_data:
+							debug(f"   Message: {response_data['message']}")
+						else:
+							debug(f"   Response: {data}")
+							
+					except:
+						debug(f"   Response: {data}")
+				
+			else:
+				debug(f"❌ Request failed: {statusCode['code']} - {headerDict}")
+		except Exception as e:
+			debug(e)
+			debug(f"❌ Response handling error: {e}")
 	
 	def saveImageToDisk(self, top_op):
 		"""Save an image from a TOP operator"""
@@ -200,18 +253,7 @@ class RpiEinkyUploadExt:
 
 			debug(f"Saved {top_op} to {saved_path}; {temp_file}")
 			# waiting for file to be saved
-			
-			# # Upload the file
-			# result = self.upload_file(saved_path)
-			
-			# # Clean up temp file (only if not using VFS)
-			# if not temp_file.startswith("vfs://"):
-			# 	try:
-			# 		os.remove(saved_path)
-			# 	except:
-			# 		pass
-			
-			# return result
+			# will be handled by the onNewFileFoundTable callback
 			
 		except Exception as e:
 			debug(f"TOP upload error: {e}")
@@ -222,15 +264,6 @@ class RpiEinkyUploadExt:
 		debug(f"New file found: {latestFilePath}")
 		self.upload_file(latestFilePath)
 
-	def onNewFileFound(self, info):
-		path = info.path
-		debug(f"New file found: {path}")
-		try:
-			debug(f"Uploading file: {path}")
-			self.upload_file(path)
-		except Exception as e:
-			debug(f"File upload error: {e}")
-			return False
 
 	def upload_file_dialog(self):
 		"""Open file dialog and upload selected file"""
@@ -289,28 +322,7 @@ class RpiEinkyUploadExt:
 		# Force cleanup by keeping only 1 file, or 0 to remove all
 		self.cleanup_pi_files(keep_count=0)
 
-	def cleanup_folders(self, keep_pi_files=10, clean_local_temp=True):
-		"""Clean both local temp folder and Pi watched folder"""
-		debug(f"ðŸ§¹ Starting folder cleanup...")
-		
-		results = {
-			'local_temp_cleaned': False,
-			'pi_files_cleaned': False,
-			'local_files_removed': 0,
-			'pi_files_removed': 0
-		}
-		
-		# Clean local temp folder
-		if clean_local_temp:
-			results['local_files_removed'] = self.cleanup_local_temp()
-			results['local_temp_cleaned'] = True
-		
-		# Clean Pi watched folder
-		results['pi_files_removed'] = self.cleanup_pi_files(keep_pi_files)
-		results['pi_files_cleaned'] = True
-		
-		debug(f"ðŸ§¹ Cleanup complete: {results}")
-		return results
+
 	
 	def cleanup_local_temp(self):
 		"""Clean local temp folder"""
@@ -373,25 +385,6 @@ class RpiEinkyUploadExt:
 			return 0
 	
 	
-	def get_latest_pi_file(self):
-		"""Get info about the latest file on Pi"""
-		try:
-			connection_id = self.webClient.request(
-				f'{self.server_url}/latest_file',
-				'GET'
-			)
-			
-			debug(f"ðŸ“„ Getting latest Pi file info...")
-			
-			# Handle response
-			self._handle_response("Get latest Pi file", connection_id)
-			
-			return True
-			
-		except Exception as e:
-			debug(f"âŒ Get latest Pi file error: {e}")
-			return False
-		
 
 	def _handle_response(self, operation_name, connection_id):
 		"""Handle WebclientDAT response using onResponse callback"""
@@ -399,51 +392,59 @@ class RpiEinkyUploadExt:
 		# Note: Response handling should be implemented in the onResponse callback
 		# of the WebclientDAT, using the connection_id to match requests
 	
-	# Convenience methods for common operations
-	def SendCurrentImage(self):
-		"""Send the current image from the image property"""
-		self.onParSend()
+
 	
-	def SendTextMessage(self, message):
-		"""Send a text message to the display"""
-		return self.upload_text(message, "message.txt")
+	def GetDisplayInfo(self):
+		"""Get current display information"""
+		return self.get_display_info()
 	
-	def SendStatusUpdate(self, status_text):
-		"""Send a status update to the display"""
-		return self.upload_text(status_text, "status.txt")
+	@property
+	def display_resolution(self):
+		"""Get current display resolution as tuple (width, height)"""
+		width = self.ownerComp.par.Displayresw.eval()
+		height = self.ownerComp.par.Displayresh.eval()
+		return (width, height) if width and height else None
 	
-	def SendRenderTop(self, top_op):
-		"""Send a specific TOP to the display"""
-		if top_op:
-			return self.saveImageToDisk(top_op)
-		else:
-			debug(f"TOP '{top_op}' not found")
-			return False
+	@property
+	def native_resolution(self):
+		"""Get native display resolution as tuple (width, height)"""
+		width = self.ownerComp.par.Nativeresw.eval()
+		height = self.ownerComp.par.Nativeresh.eval()
+		return (width, height) if width and height else None
 	
-	def CleanupAll(self, keep_files=1):
-		"""Clean both local temp and Pi folders"""
-		return self.cleanup_folders(keep_pi_files=keep_files, clean_local_temp=True)
+	@property
+	def display_type(self):
+		"""Get current display type"""
+		return self.ownerComp.par.Displaytype.eval()
 	
-	def CleanupAllAggressive(self):
-		"""Remove ALL files from both local temp and Pi folders"""
-		return self.cleanup_folders(keep_pi_files=0, clean_local_temp=True)
+	@property
+	def display_orientation(self):
+		"""Get current display orientation"""
+		return self.ownerComp.par.Displayorientation.eval()
 	
-	def CleanupLocalOnly(self):
-		"""Clean only local temp folder"""
-		return self.cleanup_local_temp()
+	@property
+	def native_orientation(self):
+		"""Get native display orientation"""
+		return self.ownerComp.par.Nativeorientation.eval()
 	
-	def CleanupPiOnly(self, keep_files=1):
-		"""Clean only Pi watched folder"""
-		return self.cleanup_pi_files(keep_files)
-	
+	@property
+	def display_source(self):
+		"""Get display info source"""
+		return self.ownerComp.par.Displaysource.eval()
+
 	def onParCleardisplay(self):
 		debug("Clearing display screen")
 		self.clear_display_screen()
 
+	def onParGetdisplayinfo(self):
+		"""Parameter callback for getting display info"""
+		debug("Getting display info")
+		self.get_display_info()
+
 	def ClearDisplayScreen(self):
 		"""Actually clear the e-ink display screen"""
 		return self.clear_display_screen()
-
+	
 	
 	# Properties for easy access
 	@property
@@ -455,30 +456,39 @@ class RpiEinkyUploadExt:
 		except:
 			return False
 	
-	def onResponse(self, statusCode, headerDict, data, id):
-		"""Handle WebclientDAT response callback"""
-		# This method should be called by the WebclientDAT's onResponse callback
-		# response object contains: id, url, statusCode, statusReason, data
+
+	
+	def _handle_display_info_response(self, response_data):
+		"""Handle display info response and store the data"""
 		try:
-			if statusCode['code'] == 200:
-				debug(f"âœ… Request successful (ID: {id})")
-				if data:
-					try:
-						response_data = json.loads(data)
-						if 'filename' in response_data:
-							debug(f"   File: {response_data['filename']}")
-						if 'message' in response_data:
-							debug(f"   Message: {response_data['message']}")
-					except:
-						debug(f"   Response: {data}")
-				
-				ui.clipboard = f"Request successful\n{data}"
-			else:
-				debug(f"âŒ Request failed: {statusCode['code']} - {headerDict}")
-				ui.clipboard = f"Request failed: {statusCode['code']} - {headerDict}"
+			# Extract display info
+			display_type = response_data.get('display_type', 'unknown')
+			resolution = response_data.get('resolution', {})
+			native_resolution = response_data.get('native_resolution', {})
+			width = resolution.get('width', 0)
+			height = resolution.get('height', 0)
+			native_width = native_resolution.get('width', width)
+			native_height = native_resolution.get('height', height)
+			orientation = response_data.get('orientation', 'landscape')
+			native_orientation = response_data.get('native_orientation', 'landscape')
+			source = response_data.get('source', 'unknown')
+			
+			# Store display info in the component
+			self.ownerComp.par.Displaytype = display_type
+			self.ownerComp.par.Displayresw = width if orientation == 'landscape' else height
+			self.ownerComp.par.Displayresh = height if orientation == 'landscape' else width
+			self.ownerComp.par.Displayorientation = orientation
+			# self.ownerComp.par.Nativeresw = native_width
+			# self.ownerComp.par.Nativeresh = native_height
+			# self.ownerComp.par.Nativeorientation = native_orientation
+			# self.ownerComp.par.Displaysource = source
+			
+			# Log the display info
+			debug(f"📺 Display Info: {display_type} ({width}×{height} {orientation})")
+			debug(f"📺 Native: {native_width}×{native_height} {native_orientation} (source: {source})")
+			
 		except Exception as e:
-			debug(e)
-			debug(f"âŒ Response handling error: {e}")
-			ui.clipboard = f"Response handling error: {e}"
+			debug(f"❌ Display info parsing error: {e}")
+
 
 
