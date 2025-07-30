@@ -225,12 +225,28 @@ class RpiEinkyUploadExt:
 				debug("No TOP operator provided")
 				return False
 			
+			# if temp folder does not exist, create it
+			if not self.tempFolder:
+				debug("No temp folder specified - skipping local cleanup")
+				return 0
+			
+			import os
+			from pathlib import Path
+			
+			temp_path = Path(self.tempFolder)
+			if not temp_path.exists():
+				debug(f"Temp folder doesn't exist: {temp_path}")
+				# create it
+				temp_path.mkdir(parents=True, exist_ok=True)
+				return 0
+			
 			# Get temp file path
 			temp_file = self._get_temp_file_path("temp_eink_top")
 			debug(f"Saving {top_op} to {temp_file}")
 			
 			self.movieFileOut.par.file.expr = f'"{temp_file}" + me.fileSuffix'
-
+			self.expectingFile = self.movieFileOut.par.file.eval()
+			self.expectingFile = self.expectingFile.split('/')[-1]
 			# Save TOP to temp file
 			self.movieFileOut.par.addframe.pulse()
 
@@ -245,9 +261,16 @@ class RpiEinkyUploadExt:
 			debug(f"TOP upload error: {e}")
 			return False
 	
-	def onFileWriteFinished(self, dat):
+	def onFileWriteFinished(self):
 		latestFilePath = self.latestFilePath	
-		self.upload_file(latestFilePath)
+		fileName = latestFilePath.split('/')[-1]
+		if fileName == self.expectingFile:
+			self.upload_file(latestFilePath)
+			debug(f"File {fileName} is the expected file")
+		else:
+			debug(f"File {fileName} is not the expected file, skipping upload")
+			return False
+
 
 
 	def upload_file_dialog(self):
