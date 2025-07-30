@@ -830,6 +830,7 @@ def get_display_info():
         
         orientation = settings.get('orientation', 'landscape')
         
+        # TODO: remove hardcoded resolutions
         display_resolutions = {
             'epd2in15g': {'width': 250, 'height': 122},
             'epd7in3e': {'width': 800, 'height': 480},

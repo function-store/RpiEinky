@@ -175,7 +175,17 @@ class EPD2in15gAdapter(EPDAdapter):
         """Clear the display"""
         if color is None:
             color = 0x55  # Default for 2in15g
-        self._epd.Clear(color)
+        # Try both Clear and clear methods for compatibility
+        if hasattr(self._epd, 'Clear'):
+            self._epd.Clear(color)
+        elif hasattr(self._epd, 'clear'):
+            self._epd.clear(color)
+        else:
+            raise AttributeError(f"EPD object has neither 'Clear' nor 'clear' method")
+    
+    def Clear(self, color: Optional[int] = None) -> None:
+        """Clear the display (uppercase for backward compatibility)"""
+        self.clear(color)
     
     def sleep(self) -> None:
         """Put display to sleep"""
@@ -218,12 +228,34 @@ class EPD13in3EAdapter(EPDAdapter):
     """Adapter for epd13in3E display"""
     
     def __init__(self):
-        # Import the actual display module
+        # Import the actual display module - 13.3" has different structure
         try:
-            import epd13in3E
-            self._epd = epd13in3E.EPD()
-        except ImportError:
-            logger.error("epd13in3E module not found. Make sure it's in your path.")
+            # First try the separate program structure (13.3" specific)
+            import sys
+            import os
+            
+            # Add the 13.3" library path to sys.path
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            epd13_path = os.path.join(script_dir, 'e-Paper', 'E-paper_Separate_Program', 
+                                     '13.3inch_e-Paper_E', 'RaspberryPi', 'python', 'lib')
+            
+            logger.info(f"13.3\" library path in principle: {epd13_path}")
+            
+            if os.path.exists(epd13_path):
+                sys.path.insert(0, epd13_path)
+                import epd13in3E
+                self._epd = epd13in3E.EPD()
+                logger.info(f"Loaded 13.3\" display from separate program path: {epd13_path}")
+            else:
+                # Fallback to waveshare_epd structure
+                from waveshare_epd import epd13in3E
+                self._epd = epd13in3E.EPD()
+                logger.info("Loaded 13.3\" display from waveshare_epd")
+                
+        except ImportError as e:
+            logger.error(f"epd13in3E module not found. Error: {e}")
+            logger.error("For 13.3\" display, ensure the library is installed from:")
+            logger.error("e-Paper/E-paper_Separate_Program/13.3inch_e-Paper_E/RaspberryPi/python/lib/")
             raise
     
     @property
@@ -242,7 +274,17 @@ class EPD13in3EAdapter(EPDAdapter):
         """Clear the display"""
         if color is None:
             color = 0x11  # Default for 13in3E
-        self._epd.Clear(color)
+        # Try both Clear and clear methods for compatibility
+        if hasattr(self._epd, 'Clear'):
+            self._epd.Clear(color)
+        elif hasattr(self._epd, 'clear'):
+            self._epd.clear(color)
+        else:
+            raise AttributeError(f"EPD object has neither 'Clear' nor 'clear' method")
+    
+    def Clear(self, color: Optional[int] = None) -> None:
+        """Clear the display (uppercase for backward compatibility)"""
+        self.clear(color)
     
     def sleep(self) -> None:
         """Put display to sleep"""
@@ -278,7 +320,7 @@ class EPD13in3EAdapter(EPDAdapter):
     
     @property
     def native_orientation(self) -> str:
-        return "landscape"
+        return "portrait"
 
 
 class EPD7in3eAdapter(EPDAdapter):
@@ -309,7 +351,17 @@ class EPD7in3eAdapter(EPDAdapter):
         """Clear the display"""
         if color is None:
             color = 0x11  # Default for 7in3e
-        self._epd.Clear(color)
+        # Try both Clear and clear methods for compatibility
+        if hasattr(self._epd, 'Clear'):
+            self._epd.Clear(color)
+        elif hasattr(self._epd, 'clear'):
+            self._epd.clear(color)
+        else:
+            raise AttributeError(f"EPD object has neither 'Clear' nor 'clear' method")
+    
+    def Clear(self, color: Optional[int] = None) -> None:
+        """Clear the display (uppercase for backward compatibility)"""
+        self.clear(color)
     
     def sleep(self) -> None:
         """Put display to sleep"""
@@ -525,14 +577,16 @@ class EPDConfig:
         script_dir = os.path.dirname(os.path.abspath(__file__))
         config_locations = [
             os.path.join(script_dir, '.epd_config.json'),  # Same directory as script
-            os.path.expanduser("~/watched_files/.epd_config.json"),  # Original location
-            os.path.expanduser("~/.epd_config.json"),  # Home directory
         ]
         
         config_file = None
         for location in config_locations:
             if os.path.exists(location):
                 config_file = location
+                logger.info(f"Found config file: {config_file}")
+                # content of config_file
+                with open(config_file, 'r') as f:
+                    logger.info(f"Content of config file: {f.read()}")
                 break
         
         try:
@@ -541,7 +595,7 @@ class EPDConfig:
                 with open(config_file, 'r') as f:
                     config = json.load(f)
                     display_type = config.get('display_type', 'epd2in15g')
-                    logger.info(f"Loaded display config: {display_type}")
+                    logger.info(f"Loaded display config: {display_type} from {config_file}")
                     return display_type
         except Exception as e:
             logger.warning(f"Could not load display config: {e}")

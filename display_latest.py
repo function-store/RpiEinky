@@ -113,6 +113,7 @@ class EinkDisplayHandler(FileSystemEventHandler):
             display_type = EPDConfig.load_display_config()
         logger.info(f"Initializing display type: {display_type}")
         self.epd = UnifiedEPD.create_display(display_type)
+        logger.info(f"Created EPD handler: {self.epd.__class__.__name__} for {display_type}") ##
         self.epd.init()
         
         # Clear screen on start if requested

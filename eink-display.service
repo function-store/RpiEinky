@@ -17,8 +17,8 @@ TimeoutStartSec=30
 TimeoutStopSec=30
 KillMode=mixed
 KillSignal=SIGTERM
-StandardOutput=journal
-StandardError=journal
+StandardOutput=append:/home/danrasp/RpiEinky/logs/display.log
+StandardError=append:/home/danrasp/RpiEinky/logs/display.log
 
 # Environment variables for hardware access
 Environment=PYTHONPATH=/home/danrasp/RpiEinky
