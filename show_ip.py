@@ -120,12 +120,14 @@ def main():
             font_large = ImageFont.load_default()
             font_xl = ImageFont.load_default()
         
-        # Create display image
-        display_image = Image.new('RGB', (epd.landscape_width, epd.landscape_height), epd.WHITE)
+        # Create display image with correct dimensions for target orientation
+        target_orientation = args.orientation if args.orientation else 'landscape'
+        img_width, img_height = epd.get_image_dimensions_for_orientation(target_orientation)
+        display_image = Image.new('RGB', (img_width, img_height), epd.WHITE)
         draw = ImageDraw.Draw(display_image)
         
         # Title
-        draw.rectangle([(0, 0), (epd.landscape_width, 40)], fill=epd.BLACK)
+        draw.rectangle([(0, 0), (img_width, 40)], fill=epd.BLACK)
         draw.text((5, 12), "Raspberry Pi Network Info", font=font_large, fill=epd.WHITE)
         
         # Hostname
