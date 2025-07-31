@@ -255,15 +255,12 @@ class EinkDisplayHandler(FileSystemEventHandler):
             logger.info("Refresh timer disabled")
         
         logger.info(f"Monitoring folder: {self.watched_folder.absolute()}")
-        # Get current orientation dimensions
-        orientation = getattr(self, 'orientation', 'landscape')
-        current_width, current_height = self.epd.get_image_dimensions_for_orientation(orientation)
-        logger.info(f"E-ink display initialized - Size: {self.epd.width}x{self.epd.height} (native: {self.epd.native_orientation}, current: {current_width}x{current_height})")
+        logger.info(f"E-ink display initialized - Size: {self.epd.width}x{self.epd.height} (native: {self.epd.native_orientation}, landscape: {self.epd.landscape_width}x{self.epd.landscape_height})")
         logger.info(f"Display orientation: {self.orientation}")
         logger.info(f"Auto-display uploads: {self.auto_display_uploads}")
         logger.info(f"Manufacturer timing requirements: {'ENABLED' if self.enable_manufacturer_timing else 'DISABLED'}")
         logger.info(f"Sleep mode: {'ENABLED' if self.enable_sleep_mode else 'DISABLED'}")
-        logger.info(f"Display dimensions - Width: {current_width}, Height: {current_height}")
+        logger.info(f"Display dimensions - Width: {self.epd.landscape_width}, Height: {self.epd.landscape_height}")
         logger.info(f"FINAL TIMING SETTINGS - Startup timer: {'DISABLED' if self.disable_startup_timer else 'ENABLED'}, Refresh timer: {'DISABLED' if self.disable_refresh_timer else 'ENABLED'}")
         
         # Save display info for web server access
@@ -1052,8 +1049,9 @@ class EinkDisplayHandler(FileSystemEventHandler):
             logger.info(f"After resize: {processed_image.size}")
             
             # Get the correct display dimensions based on orientation
-            orientation = getattr(self, 'orientation', 'landscape')
-            display_width, display_height = self.epd.get_image_dimensions_for_orientation(orientation)
+
+            display_width = self.epd.landscape_width
+            display_height = self.epd.landscape_height
             
             # # Create display image and center the processed image
             # display_image = Image.new('RGB', (display_width, display_height), self.epd.WHITE)
@@ -1080,14 +1078,12 @@ class EinkDisplayHandler(FileSystemEventHandler):
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                 content = f.read()
             
-            # Create display image with correct dimensions for orientation
-            orientation = getattr(self, 'orientation', 'landscape')
-            img_width, img_height = self.epd.get_image_dimensions_for_orientation(orientation)
-            display_image = Image.new('RGB', (img_width, img_height), self.epd.WHITE)
+            # Create display image
+            display_image = Image.new('RGB', (self.epd.landscape_width, self.epd.landscape_height), self.epd.WHITE)
             draw = ImageDraw.Draw(display_image)
             
             # Title
-            draw.rectangle([(0, 0), (img_width, 25)], fill=self.epd.BLACK)
+            draw.rectangle([(0, 0), (self.epd.landscape_width, 25)], fill=self.epd.BLACK)
             title = file_path.name
             if len(title) > 25:
                 title = title[:22] + "..."
@@ -1100,7 +1096,7 @@ class EinkDisplayHandler(FileSystemEventHandler):
             
             lines = content.split('\n')
             for line in lines:
-                if y_pos > img_height - 20:
+                if y_pos > self.epd.landscape_height - 20:
                     break
                 
                 # Wrap long lines
@@ -1115,11 +1111,11 @@ class EinkDisplayHandler(FileSystemEventHandler):
                                 draw.text((5, y_pos), current_line.strip(), 
                                         font=self.font_small, fill=self.epd.BLACK)
                                 y_pos += line_height
-                                if y_pos > img_height - 20:
+                                if y_pos > self.epd.landscape_height - 20:
                                     break
                             current_line = word + " "
                     
-                    if current_line and y_pos <= img_height - 20:
+                    if current_line and y_pos <= self.epd.landscape_height - 20:
                         draw.text((5, y_pos), current_line.strip(), 
                                 font=self.font_small, fill=self.epd.BLACK)
                         y_pos += line_height
@@ -1159,12 +1155,9 @@ class EinkDisplayHandler(FileSystemEventHandler):
                     
                     pdf_image = self.resize_image_to_fit(pdf_image)
                     
-                    # Create display image with correct dimensions for orientation
-                    orientation = getattr(self, 'orientation', 'landscape')
-                    img_width, img_height = self.epd.get_image_dimensions_for_orientation(orientation)
-                    display_image = Image.new('RGB', (img_width, img_height), self.epd.WHITE)
-                    x_offset = (img_width - pdf_image.width) // 2
-                    y_offset = (img_height - pdf_image.height) // 2
+                    display_image = Image.new('RGB', (self.epd.landscape_width, self.epd.landscape_height), self.epd.WHITE)
+                    x_offset = (self.epd.landscape_width - pdf_image.width) // 2
+                    y_offset = (self.epd.landscape_height - pdf_image.height) // 2
                     display_image.paste(pdf_image, (x_offset, y_offset))
                     
                     success = self.display_buffer(display_image)
@@ -1185,14 +1178,11 @@ class EinkDisplayHandler(FileSystemEventHandler):
     def display_file_info(self, file_path):
         """Display file information for unsupported formats"""
         try:
-            # Create display image with correct dimensions for orientation
-            orientation = getattr(self, 'orientation', 'landscape')
-            img_width, img_height = self.epd.get_image_dimensions_for_orientation(orientation)
-            display_image = Image.new('RGB', (img_width, img_height), self.epd.WHITE)
+            display_image = Image.new('RGB', (self.epd.landscape_width, self.epd.landscape_height), self.epd.WHITE)
             draw = ImageDraw.Draw(display_image)
             
             # Title
-            draw.rectangle([(0, 0), (img_width, 30)], fill=self.epd.BLACK)
+            draw.rectangle([(0, 0), (self.epd.landscape_width, 30)], fill=self.epd.BLACK)
             draw.text((5, 8), "New File Added", font=self.font_large, fill=self.epd.WHITE)
             
             # File info
@@ -1205,7 +1195,7 @@ class EinkDisplayHandler(FileSystemEventHandler):
             ]
             
             for item in info_items:
-                if y_pos > img_height - 30:
+                if y_pos > self.epd.landscape_height - 30:
                     break
                 
                 # Wrap long lines
@@ -1245,14 +1235,11 @@ class EinkDisplayHandler(FileSystemEventHandler):
     def display_error(self, filename, error_msg):
         """Display error message on e-ink"""
         try:
-            # Create display image with correct dimensions for orientation
-            orientation = getattr(self, 'orientation', 'landscape')
-            img_width, img_height = self.epd.get_image_dimensions_for_orientation(orientation)
-            display_image = Image.new('RGB', (img_width, img_height), self.epd.WHITE)
+            display_image = Image.new('RGB', (self.epd.landscape_width, self.epd.landscape_height), self.epd.WHITE)
             draw = ImageDraw.Draw(display_image)
             
             # Error title
-            draw.rectangle([(0, 0), (img_width, 30)], fill=self.epd.RED)
+            draw.rectangle([(0, 0), (self.epd.landscape_width, 30)], fill=self.epd.RED)
             draw.text((5, 8), "ERROR", font=self.font_large, fill=self.epd.WHITE)
             
             # Error details
@@ -1271,11 +1258,11 @@ class EinkDisplayHandler(FileSystemEventHandler):
                         draw.text((5, y_pos), current_line.strip(), 
                                 font=self.font_small, fill=self.epd.BLACK)
                         y_pos += 15
-                        if y_pos > img_height - 30:
+                        if y_pos > self.epd.landscape_height - 30:
                             break
                     current_line = word + " "
             
-            if current_line and y_pos <= img_height - 30:
+            if current_line and y_pos <= self.epd.landscape_height - 30:
                 draw.text((5, y_pos), current_line.strip(), 
                         font=self.font_small, fill=self.epd.BLACK)
             
@@ -1296,14 +1283,11 @@ class EinkDisplayHandler(FileSystemEventHandler):
             ip_address = get_ip_address()
             hostname = socket.gethostname()
             
-            # Create display image with correct dimensions for orientation
-            orientation = getattr(self, 'orientation', 'landscape')
-            img_width, img_height = self.epd.get_image_dimensions_for_orientation(orientation)
-            display_image = Image.new('RGB', (img_width, img_height), self.epd.WHITE)
+            display_image = Image.new('RGB', (self.epd.landscape_width, self.epd.landscape_height), self.epd.WHITE)
             draw = ImageDraw.Draw(display_image)
             
             # Title
-            draw.rectangle([(0, 0), (img_width, 35)], fill=self.epd.BLACK)
+            draw.rectangle([(0, 0), (self.epd.landscape_width, 35)], fill=self.epd.BLACK)
             draw.text((5, 10), "Device Information", font=self.font_large, fill=self.epd.WHITE)
             
             # Hostname
@@ -1350,14 +1334,11 @@ class EinkDisplayHandler(FileSystemEventHandler):
             ip_address = get_ip_address()
             hostname = socket.gethostname()
             
-            # Create display image with correct dimensions for orientation
-            orientation = getattr(self, 'orientation', 'landscape')
-            img_width, img_height = self.epd.get_image_dimensions_for_orientation(orientation)
-            display_image = Image.new('RGB', (img_width, img_height), self.epd.WHITE)
+            display_image = Image.new('RGB', (self.epd.landscape_width, self.epd.landscape_height), self.epd.WHITE)
             draw = ImageDraw.Draw(display_image)
             
             # Title
-            draw.rectangle([(0, 0), (img_width, 35)], fill=self.epd.BLACK)
+            draw.rectangle([(0, 0), (self.epd.landscape_width, 35)], fill=self.epd.BLACK)
             draw.text((5, 10), "E-ink File Monitor", font=self.font_large, fill=self.epd.WHITE)
             
             # IP Address and Web Interface (consolidated)
@@ -1392,8 +1373,13 @@ class EinkDisplayHandler(FileSystemEventHandler):
     def resize_image_to_fit(self, image):
         """Resize image to fit display while maintaining aspect ratio, with configurable crop mode"""
         # Get the correct display dimensions based on orientation
-        orientation = getattr(self, 'orientation', 'landscape')
-        display_width, display_height = self.epd.get_image_dimensions_for_orientation(orientation)
+        # orientation = getattr(self, 'orientation', 'landscape')
+        # if orientation in ['portrait', 'portrait_flipped']:
+        #     display_width = self.epd.landscape_height  # Swap dimensions for portrait
+        #     display_height = self.epd.landscape_width
+        # else:
+        display_width = self.epd.landscape_width
+        display_height = self.epd.landscape_height
         
         # Use the loaded crop mode setting
         crop_mode = getattr(self, 'image_crop_mode', 'center_crop')
@@ -1447,19 +1433,17 @@ class EinkDisplayHandler(FileSystemEventHandler):
         """Send display info response to the web server"""
         try:
             # Get actual display information from the unified EPD library
-            orientation = getattr(self, 'orientation', 'landscape')
-            current_width, current_height = self.epd.get_image_dimensions_for_orientation(orientation)
             display_info = {
                 'display_type': getattr(self.epd, 'display_type', 'epd2in15g'),
                 'resolution': {
-                    'width': current_width,
-                    'height': current_height
+                    'width': getattr(self.epd, 'landscape_width', 250),
+                    'height': getattr(self.epd, 'landscape_height', 122)
                 },
                 'native_resolution': {
                     'width': getattr(self.epd, 'width', 250),
                     'height': getattr(self.epd, 'height', 122)
                 },
-                'orientation': orientation,
+                'orientation': getattr(self, 'orientation', 'landscape'),
                 'native_orientation': getattr(self.epd, 'native_orientation', 'landscape'),
                 'source': 'display_handler'
             }
@@ -1478,19 +1462,17 @@ class EinkDisplayHandler(FileSystemEventHandler):
         """Save display info to persistent file for web server access"""
         try:
             # Get actual display information from the unified EPD library
-            orientation = getattr(self, 'orientation', 'landscape')
-            current_width, current_height = self.epd.get_image_dimensions_for_orientation(orientation)
             display_info = {
                 'display_type': getattr(self.epd, 'display_type', 'epd2in15g'),
                 'resolution': {
-                    'width': current_width,
-                    'height': current_height
+                    'width': getattr(self.epd, 'landscape_width', 250),
+                    'height': getattr(self.epd, 'landscape_height', 122)
                 },
                 'native_resolution': {
                     'width': getattr(self.epd, 'width', 250),
                     'height': getattr(self.epd, 'height', 122)
                 },
-                'orientation': orientation,
+                'orientation': getattr(self, 'orientation', 'landscape'),
                 'native_orientation': getattr(self.epd, 'native_orientation', 'landscape'),
                 'source': 'display_handler',
                 'last_updated': time.time()
@@ -1613,8 +1595,7 @@ Timing Features:
             temp_handler.orientation = args.test_orientation
             
             # Create a test image with orientation indicators
-            img_width, img_height = temp_handler.epd.get_image_dimensions_for_orientation(args.test_orientation)
-            test_image = Image.new('RGB', (img_width, img_height), (255, 255, 255))
+            test_image = Image.new('RGB', (temp_handler.epd.landscape_width, temp_handler.epd.landscape_height), (255, 255, 255))
             draw = ImageDraw.Draw(test_image)
             
             # Draw orientation test pattern

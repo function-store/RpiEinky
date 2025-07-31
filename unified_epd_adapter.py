@@ -145,46 +145,6 @@ class EPDAdapter(ABC):
             return self.height
         else:
             return self.width
-    
-    def get_dimensions_for_orientation(self, target_orientation: str) -> tuple[int, int]:
-        """
-        Get the correct width and height for a specific target orientation
-        
-        Args:
-            target_orientation: 'landscape', 'portrait', 'landscape_flipped', 'portrait_flipped'
-            
-        Returns:
-            Tuple of (width, height) for the target orientation
-        """
-        if target_orientation in ['landscape', 'landscape_flipped']:
-            return (self.landscape_width, self.landscape_height)
-        elif target_orientation in ['portrait', 'portrait_flipped']:
-            return (self.portrait_width, self.portrait_height)
-        else:
-            # Default to landscape
-            return (self.landscape_width, self.landscape_height)
-    
-    def get_image_dimensions_for_orientation(self, target_orientation: str) -> tuple[int, int]:
-        """
-        Get the correct image dimensions for a specific target orientation
-        This accounts for the fact that rotated images may have different dimensions
-        
-        Args:
-            target_orientation: 'landscape', 'portrait', 'landscape_flipped', 'portrait_flipped'
-            
-        Returns:
-            Tuple of (width, height) for creating an image in the target orientation
-        """
-        if target_orientation in ['landscape', 'landscape_flipped']:
-            # For landscape orientations, use landscape dimensions
-            return (self.landscape_width, self.landscape_height)
-        elif target_orientation in ['portrait', 'portrait_flipped']:
-            # For portrait orientations, we need to swap dimensions
-            # because the image will be rotated, changing the effective dimensions
-            return (self.landscape_height, self.landscape_width)
-        else:
-            # Default to landscape
-            return (self.landscape_width, self.landscape_height)
 
 
 class EPD2in15gAdapter(EPDAdapter):
