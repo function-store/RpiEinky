@@ -215,79 +215,7 @@ To add support for additional display models, see the [Unified Display System Do
 
 > **📢 Update Notice**: The system now preserves uploaded files instead of deleting them. Files accumulate over time and the latest file is always displayed. Use the `/cleanup_old_files` endpoint to manage storage.
 
-### Step 1: Install System Dependencies
-
-```bash
-sudo apt update
-sudo apt install python3-venv poppler-utils
-
-# Enable SPI interface (required for e-ink display)
-sudo raspi-config
-# Navigate to: Interface Options → SPI → Enable
-# Or enable directly:
-sudo raspi-config nonint do_spi 0
-```
-
-### Step 2: Get Waveshare e-Paper Library
-
-> **⚠️ Library Disclaimer**: The Waveshare e-Paper library name, location, and structure may vary depending on your display model, download method, and Waveshare's current repository organization. The paths shown below are examples - you may need to adjust them based on your specific setup.
-
-**Option A: Download specific files (Recommended for 2.15" display)**
-```bash
-# Download the specific files for your display
-wget https://files.waveshare.com/wiki/common/2in15_e-Paper_G.zip
-unzip 2in15_e-Paper_G.zip -d 2in15_e-Paper_G
-```
-*Advantages: Smaller download, specific to your display model, includes tested examples*
-
-**Option B: Clone full repository**
-```bash
-# Clone the complete Waveshare repository
-git clone https://github.com/waveshare/e-Paper.git
-```
-*Advantages: All displays supported, latest updates, full documentation*
-
-**Option C: Download from Waveshare website**
-```bash
-# Visit https://www.waveshare.com/wiki/2.15inch_e-Paper_HAT_(G)
-# Download the appropriate library for your display model
-# Extract and follow the installation instructions in the downloaded package
-```
-
-### Step 3: Set Up Virtual Environment and Install Libraries
-
-```bash
-# Clean start (recommended)
-rm -rf eink_env
-python3 -m venv eink_env
-source eink_env/bin/activate
-
-# Install Python dependencies
-pip install -r requirements.txt
-
-# Install Waveshare e-Paper library into virtual environment
-# ⚠️ IMPORTANT: Adjust these paths based on your actual library location and structure
-# And always consult with the actual device's manufacturer instructions first!
-
-# If you downloaded specific files (Option A):
-cp -r 2in15_e-Paper_G/RaspberryPi_JetsonNano/python/lib/waveshare_epd eink_env/lib/python3.*/site-packages/
-cp -r 2in15_e-Paper_G/RaspberryPi_JetsonNano/python/pic ./
-
-# OR if you cloned the full repo (Option B):
-cp -r e-Paper/RaspberryPi_JetsonNano/python/lib/waveshare_epd eink_env/lib/python3.*/site-packages/
-cp -r e-Paper/RaspberryPi_JetsonNano/python/pic ./
-
-# OR if you downloaded from website (Option C):
-# Follow the specific instructions in your downloaded package
-# Common variations:
-# cp -r e-Paper_HAT_G/RaspberryPi/python/lib/waveshare_epd eink_env/lib/python3.*/site-packages/
-# cp -r e-Paper_HAT_G/RaspberryPi/python/pic ./
-
-# Test that the library works
-python -c "from waveshare_epd import epd2in15g; print('Waveshare library installed successfully!')"
-```
-
-### Step 4: Troubleshooting Library Installation
+### Troubleshooting Library Installation
 
 If you encounter import errors, the library structure may be different. Here are common variations:
 
@@ -339,22 +267,7 @@ python -c "import epd2in15g; print('Success!')"
 python -c "from epd import epd2in15g; print('Success!')"
 ```
 
-### Step 4: Test Installation
-
-```bash
-# Start the monitor (in one terminal)
-source eink_env/bin/activate
-python display_latest.py
-
-# Create test files (in another terminal)
-source eink_env/bin/activate
-python test_display_system.py
-
-# Test timing features (optional)
-python test_timing_features.py
-```
-
-### Step 5: Additional Steps
+### Additional Steps
 See [🌐 Raspberry Network Setup (Optional)](#-raspberry-network-setup-optional) for instructions how to set up a static IP.
 
 

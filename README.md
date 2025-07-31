@@ -1,6 +1,9 @@
 # E-Ink File Display System
 
-A comprehensive e-ink display management system designed for Raspberry Pi with web interface supporting multiple Waveshare e-paper displays. Features drag-and-drop uploads, file gallery, and remote management.
+A comprehensive e-ink display management system designed for [Raspberry Pi](https://www.raspberrypi.com/) with web interface supporting multiple [WaveShare](https://www.waveshare.com/) e-paper displays. Features drag-and-drop uploads, file gallery, and remote management.
+
+![E-Ink Display System](https://github.com/function-store/RpiEinky/raw/main/docs/header.jpg)
+
 
 ## Purpose
 
@@ -12,7 +15,8 @@ A comprehensive e-ink display management system designed for Raspberry Pi with w
 
 ## Installation
 
-> **⚠️ Installation Disclaimer**: This system is designed for Raspberry Pi. Installation steps may vary based on your specific e-paper display model and Raspberry Pi model. The Waveshare library structure, file locations, and import names can differ between display models and library versions. **Note**: The 13.3" display uses a separate library structure located in `E-paper_Separate_Program/13.3inch_e-Paper_E/` and requires shared object files to be installed in `/usr/local/lib/`. Always refer to your display's specific documentation and adjust paths accordingly.
+> **⚠️ Installation Disclaimer**: This system is designed for Raspberry Pi. Installation steps may vary based on your specific e-paper display model and Raspberry Pi model. The Waveshare library structure, file locations, and import names can differ between display models and library versions. 
+> **‼️IMPORTANT**: Always refer to your display's specific documentation and adjust paths and procedures accordingly.
 
 ### 1. Install System Dependencies
 ```bash
@@ -25,10 +29,6 @@ sudo raspi-config nonint do_spi 0  # Enable SPI interface
 
 ### 2. Get Waveshare e-Paper Library
 ```bash
-# Download specific files (recommended)
-
-
-
 # Clone full waveshare e-Paper repository
 git clone https://github.com/waveshare/e-Paper.git
 ```
@@ -88,6 +88,7 @@ python -c "import epd13in3E; print('13.3\" display library Success')"
 # Create display configuration
 echo '{"display_type": "epd2in15g"}' > .epd_config.json
 ```
+> Refer to the name used for your device's python import name found in the python libraries
 
 ### 5. Test Installation
 ```bash
@@ -102,6 +103,7 @@ python display_latest.py
 - **`upload_server.py`** - Flask web server with web UI and API
 - **`unified_epd_adapter.py`** - Display abstraction layer for multiple e-paper models
 - **`run_eink_system.py`** - Combined runner for both services
+- **`manage_eink_system.sh`** - Primary system management script with comprehensive control interface
 
 ### File Structure
 ```
@@ -110,6 +112,7 @@ RpiEinky/
 ├── upload_server.py               # Web server with UI
 ├── unified_epd_adapter.py        # Display abstraction layer
 ├── run_eink_system.py             # Combined runner
+├── manage_eink_system.sh          # Primary system management script
 ├── clear_display.py               # Display clearing utility
 ├── templates/index.html           # Web interface template
 ├── static/                        # Web UI assets
@@ -122,6 +125,8 @@ RpiEinky/
 - **epd2in15g** - 2.15" grayscale (160×296, portrait native)
 - **epd13in3E** - 13.3" 7-color (1200×1600, portrait native)  
 - **epd7in3e** - 7.3" 7-color (800×480, landscape native)
+
+> To add more supported devices to the see the section [Extending Display Support](#extending-display-support)
 
 ### Manufacturer Safety Features
 The system includes optional manufacturer-recommended safety features to prevent display damage:
@@ -141,6 +146,28 @@ python display_latest.py --enable-manufacturer-timing true --enable-sleep-mode t
 - **Text**: txt, md, py, js, html, css (word-wrapped)
 - **PDFs**: First page as image (requires pdf2image)
 - **Other**: File information display
+
+## Command Line Arguments
+
+The `display_latest.py` screen management script supports several command line arguments for customization.
+
+### Common Arguments
+
+| Argument | Short | Description | Default |
+|----------|-------|-------------|---------|
+| `--display-file` | `-d` | Display this file on startup | None |
+| `--folder` | `-f` | Folder to monitor for new files | `~/watched_files` |
+| `--clear-start` | - | Clear screen on startup | False |
+| `--no-clear-exit` | - | Don't clear screen when exiting | False |
+| `--orientation` | - | Display orientation | landscape |
+| `--disable-startup-timer` | - | Disable startup display timer (true/false) | false |
+| `--disable-refresh-timer` | - | Disable refresh timer (true/false) | false |
+| `--startup-delay` | - | Minutes to wait before displaying priority file | 1 |
+| `--refresh-interval` | - | Hours between display refreshes | 24 |
+| `--enable-manufacturer-timing` | - | Enable 180s minimum refresh (true/false) | false |
+| `--enable-sleep-mode` | - | Enable sleep mode (true/false) | true |
+| `--display-type` | - | Specify display type | From config file |
+| `--help` | `-h` | Show help message | - |
 
 ## Web Server API
 
@@ -193,84 +220,192 @@ sudo systemctl enable eink-display.service
 sudo systemctl start eink-display.service
 ```
 
-### Service Management
-```bash
-# Management scripts
-./manage_eink_system.sh start|stop|restart|status|logs
-./restart_eink_system.sh
-
 # Service commands
+```
 sudo systemctl start|stop|restart eink-display.service
 sudo systemctl status eink-display.service
 sudo journalctl -u eink-display.service -f
 ```
 
+### System Management Script (`manage_eink_system.sh`)
+
+The `manage_eink_system.sh` script provides a comprehensive interface for managing the e-ink display system without requiring system reboots or direct interaction with systemd. It handles virtual environment activation, process management, and provides detailed status information.
+
+#### Available Commands
+
+| Command | Description |
+|---------|-------------|
+| `start` | Start the e-ink system (tries systemd first, falls back to manual) |
+| `stop` | Stop the e-ink system (both systemd and manual processes) |
+| `restart` | Restart the e-ink system |
+| `status` | Show comprehensive system status including hardware checks |
+| `logs` | Display recent logs from all components |
+| `follow` | Follow logs in real-time (press Ctrl+C to stop) |
+| `clear` | Clear the e-ink display |
+| `ip` | Show network information and web interface URL |
+| `cleanup` | Clean up orphaned processes and stale PID files |
+| `help` | Show help message |
+
+#### Usage Examples
+
+```bash
+# Start the system
+./manage_eink_system.sh start
+```
+
+#### Status Information
+
+The `status` command provides comprehensive system information:
+
+- **Systemd Service Status**: Whether the systemd service is running
+- **Display Monitor Status**: Status of the file monitoring system
+- **Upload Server Status**: Status of the web interface server
+- **Hardware Status**: SPI interface and GPIO access availability
+- **Virtual Environment**: Location and availability of the Python environment
+- **Watched Folder**: Status of the monitored file directory
+
+#### Log Management
+
+The script manages logs from multiple sources:
+
+- **Systemd Service Logs**: From the systemd service (if active)
+- **Management Logs**: Script's own activity log
+- **Display Monitor Logs**: File monitoring and display operations
+- **Upload Server Logs**: Web interface and API operations
+- **File Activity**: Recent file changes in the watched folder
+
+#### Process Management
+
+The script intelligently manages processes:
+
+- **Systemd Priority**: Attempts to use systemd service first
+- **Manual Fallback**: Falls back to manual process management if systemd fails
+- **PID File Management**: Tracks processes using PID files
+- **Graceful Shutdown**: Uses SIGTERM first, then SIGKILL if needed
+- **Orphaned Process Cleanup**: Identifies and removes stale processes
+
+#### Virtual Environment Detection
+
+The script automatically detects the virtual environment:
+
+- Checks project directory (`./eink_env`)
+- Falls back to home directory (`~/eink_env`)
+- Provides clear error messages if not found
+
+#### Network Information
+
+The `ip` command displays:
+
+- Raspberry Pi hostname
+- IP address
+- Web interface URL
+- Web interface status
+
 ### Web Interface Access
 ```bash
 # Start complete system
 ./eink_control.sh                    # Default: http://PI_IP:5000
-./eink_control_nginx.sh              # Optional: nginx setup
 
 # Access web interface
 http://192.168.1.100:5000           # Replace with your Pi's IP
 ```
 
-### Command Line Arguments
+# Extending Display Support
 
-The system supports several command line arguments for customization:
+The system uses a unified adapter pattern (`unified_epd_adapter.py`) that makes it easy to add support for new e-paper displays. Each display type has its own adapter class that implements a common interface.
 
-```bash
-# Basic usage
-python display_latest.py
+#### Adding New Display Support
 
-# Display specific file on startup
-python display_latest.py --display-file ~/welcome.jpg
-python display_latest.py -d ~/status.txt
+To add support for a new display:
 
-# Monitor different folder
-python display_latest.py --folder ~/my_files
-python display_latest.py -f ~/Desktop/display_files
+1. **Install the display library** from Waveshare or the manufacturer
+2. **Create a new adapter class** that inherits from `EPDAdapter`
+3. **Implement the required methods**:
+   - `init()` - Initialize the display
+   - `display(image)` - Display an image
+   - `clear(color)` - Clear the display
+   - `sleep()` - Put display to sleep
+   - `getbuffer(image)` - Convert image to display buffer
+   - Properties: `display_type`, `width`, `height`, `WHITE`, `BLACK`, `RED`, `YELLOW`, `native_orientation`
 
-# Control screen clearing
-python display_latest.py --clear-start           # Clear on startup
-python display_latest.py --no-clear-exit         # Don't clear on exit
+4. **Add display configuration** to the `DISPLAY_CONFIGS` dictionary in `UnifiedEPD`
 
-# Change display orientation
-python display_latest.py --orientation landscape
-python display_latest.py --orientation portrait
+#### Example Adapter Structure
 
-# Control timing features
-python display_latest.py --disable-startup-timer true  # Disable startup timer
-python display_latest.py --startup-delay 5       # 5-minute startup delay
-python display_latest.py --refresh-interval 12   # 12-hour refresh interval
-
-# Manufacturer timing and sleep mode
-python display_latest.py --enable-manufacturer-timing true  # 180s minimum refresh (safety)
-python display_latest.py --enable-sleep-mode false         # Disable sleep mode
-
-# Specify display type (overrides config file)
-python display_latest.py --display-type epd2in15g
-python display_latest.py --display-type epd7in3e
-python display_latest.py --display-type epd13in3E
+```python
+class EPDNewDisplayAdapter(EPDAdapter):
+    def __init__(self):
+        # Import the actual display module
+        try:
+            from waveshare_epd import epdnewdisplay
+            self.epd = epdnewdisplay.EPD()
+        except ImportError:
+            raise ImportError("New display library not found")
+    
+    @property
+    def display_type(self) -> str:
+        return "epdnewdisplay"
+    
+    def init(self) -> int:
+        return self.epd.init()
+    
+    def display(self, image) -> None:
+        self.epd.display(image)
+    
+    def clear(self, color: Optional[int] = None) -> None:
+        self.epd.Clear(color or self.WHITE)
+    
+    def sleep(self) -> None:
+        self.epd.sleep()
+    
+    def getbuffer(self, image: Image.Image):
+        return self.epd.getbuffer(image)
+    
+    @property
+    def width(self) -> int:
+        return self.epd.width
+    
+    @property
+    def height(self) -> int:
+        return self.epd.height
+    
+    # ... other required properties
 ```
 
-### Common Arguments
+#### Using AI/LLM Assistance
 
-| Argument | Short | Description | Default |
-|----------|-------|-------------|---------|
-| `--display-file` | `-d` | Display this file on startup | None |
-| `--folder` | `-f` | Folder to monitor for new files | `~/watched_files` |
-| `--clear-start` | - | Clear screen on startup | False |
-| `--no-clear-exit` | - | Don't clear screen when exiting | False |
-| `--orientation` | - | Display orientation | landscape |
-| `--disable-startup-timer` | - | Disable startup display timer (true/false) | false |
-| `--disable-refresh-timer` | - | Disable refresh timer (true/false) | false |
-| `--startup-delay` | - | Minutes to wait before displaying priority file | 1 |
-| `--refresh-interval` | - | Hours between display refreshes | 24 |
-| `--enable-manufacturer-timing` | - | Enable 180s minimum refresh (true/false) | false |
-| `--enable-sleep-mode` | - | Enable sleep mode (true/false) | true |
-| `--display-type` | - | Specify display type | From config file |
-| `--help` | `-h` | Show help message | - |
+**💡 AI/LLM Integration Tip**: Large Language Models (LLMs) can be extremely helpful when integrating new displays:
+
+- **Library Analysis**: Provide the LLM with the display library code to understand the API
+- **Adapter Generation**: Ask the LLM to generate the adapter class based on the library structure
+- **Error Debugging**: Use LLMs to troubleshoot import issues and hardware communication problems
+- **Documentation**: Generate documentation for new display types
+
+**Example LLM Prompt**:
+```
+"I have a new e-paper display library with this structure:
+[library code]
+
+Please help me create an adapter class that follows the EPDAdapter pattern:
+[adapter interface]
+
+The new display should support these features:
+- Resolution: [width]x[height]
+- Colors: [color support]
+- Native orientation: [portrait/landscape]"
+```
+
+#### Integration Steps
+
+1. **Study the library**: Understand the display's API and initialization requirements
+2. **Create adapter**: Implement the `EPDAdapter` interface for your display
+3. **Test integration**: Verify the adapter works with the unified system
+4. **Update configuration**: Add the display to the supported displays list
+5. **Document**: Add the new display to this documentation
+
+#### Common Integration Challenges
+
+Please refer to section [13.3" Display Special Installation](#31-133-display-special-installation) to see an example of integration challenges.
 
 ## Troubleshooting
 
@@ -426,41 +561,6 @@ sudo nmcli con down preconfigured && sudo nmcli con up preconfigured
 
 ### Hardware Library
 - Waveshare e-Paper library (from their GitHub)
-
-## Quick Start
-
-```bash
-# 1. Install dependencies (Raspberry Pi)
-sudo apt update && sudo apt install python3-venv poppler-utils
-sudo raspi-config nonint do_spi 0
-
-# 2. Set up environment
-python3 -m venv eink_env
-source eink_env/bin/activate
-pip install -r requirements.txt
-
-# 3. Install Waveshare library
-wget https://files.waveshare.com/upload/7/71/E-Paper_code.zip
-unzip E-Paper_code.zip -d e-Paper
-cp -r e-Paper/RaspberryPi_JetsonNano/python/lib/waveshare_epd eink_env/lib/python3.*/site-packages/
-
-# For 13.3" display, also install the separate program library
-if [ -d "e-Paper/E-paper_Separate_Program/13.3inch_e-Paper_E" ]; then
-    cp -r e-Paper/E-paper_Separate_Program/13.3inch_e-Paper_E/RaspberryPi/python/lib/* eink_env/lib/python3.*/site-packages/
-    # Copy .so files to system library path for 13.3" display
-    sudo cp e-Paper/E-paper_Separate_Program/13.3inch_e-Paper_E/RaspberryPi/python/lib/*.so /usr/local/lib/
-    sudo ldconfig
-fi
-
-# 4. Configure display with your display from the supported display types
-echo '{"display_type": "epd2in15g"}' > .epd_config.json
-
-# 5. Start system
-./eink_control.sh
-
-# 6. Access web interface
-# Open http://YOUR_PI_IP:5000 in browser
-```
 
 ## Raspberry Pi Resources
 
