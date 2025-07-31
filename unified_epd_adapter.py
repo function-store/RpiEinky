@@ -397,6 +397,7 @@ class EPD7in3eAdapter(EPDAdapter):
     
     @property
     def native_orientation(self) -> str:
+        # we say this even though it's portrait, because in the library the width and height are swapped
         return "landscape"
 
 
@@ -409,23 +410,23 @@ class UnifiedEPD:
         "epd2in15g": {
             "class": EPD2in15gAdapter,
             "name": "2.15\" Grayscale Display",
-            "resolution": (160, 296),
+            "resolution": (296, 120),
             "colors": "4-color grayscale",
-            "native_orientation": "portrait"  # 160x296 - taller than wide
+            "native_orientation": "portrait"
         },
         "epd13in3E": {
             "class": EPD13in3EAdapter,
             "name": "13.3\" Color Display", 
-            "resolution": (1200, 1600),
+            "resolution": (1600, 1200),
             "colors": "7-color",
-            "native_orientation": "portrait"  # 1200x1600 - taller than wide
+            "native_orientation": "portrait"
         },
         "epd7in3e": {
             "class": EPD7in3eAdapter,
             "name": "7.3\" Color Display",
             "resolution": (800, 480),
             "colors": "7-color",
-            "native_orientation": "landscape"  # 800x480 - wider than tall
+            "native_orientation": "landscape"
         }
     }
     
@@ -515,50 +516,6 @@ class UnifiedEPD:
         """Get native orientation for a display type"""
         config = cls.DISPLAY_CONFIGS.get(display_type)
         return config.get('native_orientation') if config else None
-
-
-# Backward compatibility wrapper for existing code
-class LegacyEPDWrapper:
-    """Wrapper that provides the same interface as the original EPD classes"""
-    
-    def __init__(self, display_type: str):
-        self._adapter = UnifiedEPD.create_display(display_type)
-        
-        # Expose adapter properties as instance attributes for compatibility
-        self.width = self._adapter.width
-        self.height = self._adapter.height
-        self.WHITE = self._adapter.WHITE
-        self.BLACK = self._adapter.BLACK
-        self.RED = self._adapter.RED
-        self.YELLOW = self._adapter.YELLOW
-    
-    def init(self) -> int:
-        """Initialize the display (compatible with both naming conventions)"""
-        return self._adapter.init()
-    
-    def Init(self) -> int:
-        """Alternative init method for compatibility"""
-        return self._adapter.init()
-    
-    def display(self, image) -> None:
-        """Display an image"""
-        self._adapter.display(image)
-    
-    def Clear(self, color=None) -> None:
-        """Clear the display (compatible with both naming conventions)"""
-        self._adapter.clear(color)
-    
-    def clear(self, color=None) -> None:
-        """Alternative clear method for compatibility"""
-        self._adapter.clear(color)
-    
-    def sleep(self) -> None:
-        """Put display to sleep"""
-        self._adapter.sleep()
-    
-    def getbuffer(self, image: Image.Image):
-        """Convert image to display buffer"""
-        return self._adapter.getbuffer(image)
 
 
 # Configuration helper

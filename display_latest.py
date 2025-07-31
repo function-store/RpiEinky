@@ -616,13 +616,13 @@ class EinkDisplayHandler(FileSystemEventHandler):
             elif orientation == 'portrait':
                 # Rotate 90 degrees clockwise
                 logger.info(f"Rotating image 90 degrees clockwise for portrait")
-                rotated = image.rotate(90, expand=True)
+                rotated = image.rotate(90, expand=True, fillcolor="white")
                 logger.info(f"Image rotated from {image.size} to {rotated.size}")
                 return rotated
             elif orientation == 'portrait_flipped':
                 # Rotate 270 degrees clockwise (or 90 degrees counter-clockwise)
                 logger.info(f"Rotating image 270 degrees clockwise for portrait_flipped")
-                rotated = image.rotate(270, expand=True)
+                rotated = image.rotate(270, expand=True, fillcolor="white")
                 logger.info(f"Image rotated from {image.size} to {rotated.size}")
                 return rotated
             else:
@@ -1373,11 +1373,6 @@ class EinkDisplayHandler(FileSystemEventHandler):
     def resize_image_to_fit(self, image):
         """Resize image to fit display while maintaining aspect ratio, with configurable crop mode"""
         # Get the correct display dimensions based on orientation
-        # orientation = getattr(self, 'orientation', 'landscape')
-        # if orientation in ['portrait', 'portrait_flipped']:
-        #     display_width = self.epd.landscape_height  # Swap dimensions for portrait
-        #     display_height = self.epd.landscape_width
-        # else:
         display_width = self.epd.landscape_width
         display_height = self.epd.landscape_height
         
@@ -1395,6 +1390,8 @@ class EinkDisplayHandler(FileSystemEventHandler):
             new_width = int(image.width * scale)
             new_height = int(image.height * scale)
             resized_image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            new_width = resized_image.width
+            new_height = resized_image.height
             
             # Center-crop to exact display size
             left = (new_width - display_width) // 2
@@ -1547,8 +1544,6 @@ Timing Features:
                        help='Do not clear screen on exit')
     parser.add_argument('--clear-start', action='store_true',
                        help='Clear screen on start')
-    parser.add_argument('--test-orientation', choices=['landscape', 'landscape_flipped', 'portrait', 'portrait_flipped'],
-                        help='Test orientation by displaying a test image immediately and exiting')
     parser.add_argument('--orientation', choices=['landscape', 'landscape_flipped', 'portrait', 'portrait_flipped'],
                         help='Display orientation (default: from settings file)')
     parser.add_argument('--disable-startup-timer', type=str, choices=['true', 'false'], default=None,
@@ -1586,42 +1581,6 @@ Timing Features:
             logger.error(f"Error displaying IP address: {e}")
             return
     
-    # Test orientation if requested
-    if args.test_orientation:
-        logger.info(f"Testing orientation: {args.test_orientation}")
-        try:
-            # Create temporary handler just to test orientation
-            temp_handler = EinkDisplayHandler(clear_on_start=False, clear_on_exit=False, display_type=args.display_type)
-            temp_handler.orientation = args.test_orientation
-            
-            # Create a test image with orientation indicators
-            test_image = Image.new('RGB', (temp_handler.epd.landscape_width, temp_handler.epd.landscape_height), (255, 255, 255))
-            draw = ImageDraw.Draw(test_image)
-            
-            # Draw orientation test pattern
-            draw.rectangle([0, 0, test_image.width-1, test_image.height-1], outline=(0, 0, 0), width=5)
-            draw.text((10, 10), f"Orientation: {args.test_orientation}", font=temp_handler.font_large, fill=(0, 0, 0))
-            draw.text((10, 40), f"Display: {test_image.width}x{test_image.height}", font=temp_handler.font_medium, fill=(0, 0, 0))
-            
-            # Draw corner markers
-            draw.rectangle([10, 10, 50, 50], fill=(255, 0, 0))  # Top-left: Red
-            draw.rectangle([test_image.width-50, 10, test_image.width-10, 50], fill=(0, 255, 0))  # Top-right: Green
-            draw.rectangle([10, test_image.height-50, 50, test_image.height-10], fill=(0, 0, 255))  # Bottom-left: Blue
-            draw.rectangle([test_image.width-50, test_image.height-50, test_image.width-10, test_image.height-10], fill=(255, 255, 0))  # Bottom-right: Yellow
-            
-            # Apply orientation
-            oriented_image = temp_handler.apply_orientation(test_image)
-            
-            # Display the test image
-            temp_handler.display_buffer(oriented_image)
-            
-            # Clean up
-            temp_handler.epd.sleep()
-            logger.info(f"Orientation test completed for: {args.test_orientation}. Exiting.")
-            return
-        except Exception as e:
-            logger.error(f"Error testing orientation: {e}")
-            return
     
     # Configuration
     WATCHED_FOLDER = os.path.expanduser(args.folder)
