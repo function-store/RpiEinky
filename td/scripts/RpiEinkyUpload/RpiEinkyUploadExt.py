@@ -224,21 +224,18 @@ class RpiEinkyUploadExt:
 			if not top_op:
 				debug("No TOP operator provided")
 				return False
-			
-			# if temp folder does not exist, create it
+
+
 			if not self.tempFolder:
-				debug("No temp folder specified - skipping local cleanup")
-				return 0
-			
-			import os
-			from pathlib import Path
-			
+				self.ownerComp.par.Tempfolder.val = f"temp"
+
 			temp_path = Path(self.tempFolder)
 			if not temp_path.exists():
 				debug(f"Temp folder doesn't exist: {temp_path}")
 				# create it
 				temp_path.mkdir(parents=True, exist_ok=True)
-				return 0
+
+
 			
 			# Get temp file path
 			temp_file = self._get_temp_file_path("temp_eink_top")
@@ -266,9 +263,11 @@ class RpiEinkyUploadExt:
 		ui.viewFile(f"{self.server_url}")
 
 	def onFileWriteFinished(self):
+		if self.fileInfo.numRows <= 1:
+			return False
 		latestFilePath = self.latestFilePath	
 		fileName = latestFilePath.split('/')[-1]
-		if fileName == self.expectingFile:
+		if fileName == getattr(self, 'expectingFile', None):
 			self.upload_file(latestFilePath)
 			debug(f"File {fileName} is the expected file")
 		else:
