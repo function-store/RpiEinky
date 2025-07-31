@@ -10,8 +10,30 @@ A comprehensive e-ink display management system designed for [Raspberry Pi](http
 - **Real-time file monitoring** - Watches `~/watched_files` folder for new files
 - **Web management interface** - Modern responsive UI for remote file uploads and management
 - **Multi-display support** - Supports 4-color grayscale and 7-color displays with automatic orientation handling
-- **TouchDesigner integration** - HTTP upload server for remote file management
+- **TouchDesigner integration** - HTTP upload client for remote file management
 - **Auto-startup service** - Run automatically on system boot with systemd
+
+## Features
+
+### Web Interface
+- **Drag & Drop Uploads** - Simply drag files from your computer to upload
+- **File Gallery** - Browse all uploaded files with thumbnails
+- **One-Click Display** - Click any file to display it immediately on the e-ink screen
+- **File Management** - Delete individual files or multiple files at once
+- **Responsive Design** - Works on desktop, tablet, and mobile devices
+- **Network Access** - Access from any device on your local network
+
+### Display Capabilities
+- **Multiple File Types** - Images (JPG, PNG, BMP), text files, PDFs, and more
+- **Auto-Resizing** - Images automatically resize to fit your display
+- **Text Rendering** - Text files display with proper word wrapping
+- **PDF Support** - First page of PDFs rendered as images
+- **Orientation Handling** - Automatic portrait/landscape adjustment
+
+### TouchDesigner Integration
+- **Direct Upload** - Send images directly from TouchDesigner
+- **Real-time Updates** - Display changes immediately
+- **Component Library** - Reusable TouchDesigner components included
 
 ## Installation
 
@@ -95,6 +117,49 @@ echo '{"display_type": "epd2in15g"}' > .epd_config.json
 source eink_env/bin/activate
 python display_latest.py
 ```
+
+## Quick Start Guide
+
+### 6. Start the Complete System
+After successful installation, start the full system with web interface:
+
+```bash
+# Start the complete system (display monitor + web server)
+source eink_env/bin/activate
+python run_eink_system.py
+```
+
+### 7. Access the Web Interface
+Once running, access the web interface from any device on your network:
+
+```bash
+# Find your Raspberry Pi's IP address
+hostname -I
+
+# Access the web interface (replace with your Pi's IP)
+http://192.168.1.100:5000
+```
+
+### 8. Upload and Display Files
+- **Drag & Drop**: Simply drag files into the web interface
+- **File Gallery**: Browse and manage uploaded files
+- **Direct Display**: Click any file to display it immediately
+- **TouchDesigner Integration**: Use the TouchDesigner components in the `td` folder
+
+### 9. Set Up Auto-Start (Optional)
+To run automatically on boot:
+
+```bash
+# Install as systemd services
+chmod +x ~/RpiEinky/install_services.sh
+~/RpiEinky/install_services.sh
+
+# The system will now start automatically on boot
+```
+
+## TouchDesigner Integration
+
+The `td` folder contains an example `.toe` file and a reusable `.tox` file to send images from TouchDesigner as well as manage the folder structure. For further configuration please refer to the `Settings` section of the web interface.
 
 ## Architecture
 
@@ -208,24 +273,74 @@ GET /display_info
 
 ## Services
 
-### Auto-Start Service
+### Auto-Start Service Installation
+
+The system includes flexible service installation that automatically adapts to your username and home directory.
+
+#### Automatic Installation (Recommended)
 ```bash
-# Automated setup
-./setup_startup.sh
+# Make the installation script executable
+chmod +x ~/RpiEinky/install_services.sh
 
-# Manual setup
-sudo cp eink-display.service /etc/systemd/system/
+# Run the installation script
+~/RpiEinky/install_services.sh
+```
+
+The installation script will:
+- Detect your current user and home directory
+- Configure service files with the correct paths
+- Install both display and upload services
+- Enable services to start on boot
+- Create logs directory if needed
+
+#### Manual Installation
+```bash
+# Configure service files for your user
+sed -e "s|\${USER}|$(whoami)|g" \
+    -e "s|\${HOME}|$HOME|g" \
+    -e "s|\${UID}|$(id -u)|g" \
+    ~/RpiEinky/systemd/eink-display.service > /tmp/eink-display.service
+
+sed -e "s|\${USER}|$(whoami)|g" \
+    -e "s|\${HOME}|$HOME|g" \
+    ~/RpiEinky/systemd/eink-upload.service > /tmp/eink-upload.service
+
+# Install services
+sudo cp /tmp/eink-display.service /etc/systemd/system/
+sudo cp /tmp/eink-upload.service /etc/systemd/system/
+sudo cp ~/RpiEinky/systemd/eink-system.target /etc/systemd/system/
+
+# Set permissions and enable
+sudo chmod 644 /etc/systemd/system/eink-*.service
+sudo chmod 644 /etc/systemd/system/eink-system.target
 sudo systemctl daemon-reload
-sudo systemctl enable eink-display.service
-sudo systemctl start eink-display.service
+sudo systemctl enable eink-display.service eink-upload.service eink-system.target
 ```
 
-# Service commands
-```
+#### Service Management Commands
+```bash
+# Start both services
+sudo systemctl start eink-system.target
+
+# Individual service control
 sudo systemctl start|stop|restart eink-display.service
+sudo systemctl start|stop|restart eink-upload.service
+
+# Check status
 sudo systemctl status eink-display.service
+sudo systemctl status eink-upload.service
+
+# View logs
 sudo journalctl -u eink-display.service -f
+sudo journalctl -u eink-upload.service -f
+tail -f ~/RpiEinky/logs/display.log
+
+# Uninstall services
+chmod +x ~/RpiEinky/uninstall_services.sh
+~/RpiEinky/uninstall_services.sh
 ```
+
+> **Note**: The service files now use environment variables (`${USER}`, `${HOME}`, `${UID}`) that are automatically replaced during installation, making them work with any username.
 
 ### System Management Script (`manage_eink_system.sh`)
 

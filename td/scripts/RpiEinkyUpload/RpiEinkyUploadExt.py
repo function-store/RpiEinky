@@ -1,4 +1,4 @@
-
+﻿
 import json
 import os
 from pathlib import Path
@@ -127,7 +127,7 @@ class RpiEinkyUploadExt:
 				'POST'
 			)
 			
-			debug(f"🖥️ Clearing e-ink display screen... (connection: {connection_id})")
+			debug(f"ðŸ–¥ï¸ Clearing e-ink display screen... (connection: {connection_id})")
 			
 			
 			return True
@@ -261,6 +261,10 @@ class RpiEinkyUploadExt:
 			debug(f"TOP upload error: {e}")
 			return False
 	
+	def onParOpenwebinterface(self):
+		debug("Opening web interface")
+		ui.viewFile(f"{self.server_url}")
+
 	def onFileWriteFinished(self):
 		latestFilePath = self.latestFilePath	
 		fileName = latestFilePath.split('/')[-1]
@@ -480,8 +484,8 @@ class RpiEinkyUploadExt:
 			# self.ownerComp.par.Displaysource = source
 			
 			# Log the display info
-			debug(f"?? Display Info: {display_type} ({width}�{height} {orientation})")
-			debug(f"?? Native: {native_width}�{native_height} {native_orientation} (source: {source})")
+			debug(f"?? Display Info: {display_type} ({width}×{height} {orientation})")
+			debug(f"?? Native: {native_width}×{native_height} {native_orientation} (source: {source})")
 			
 		except Exception as e:
 			debug(f"? Display info parsing error: {e}")

@@ -1,21 +1,34 @@
 [Unit]
-Description=E-ink Display Monitor
+Description=E-ink Display System
 After=network.target
-PartOf=eink-system.target
+Wants=network.target
 
 [Service]
 Type=simple
-User=pi
-Group=pi
-WorkingDirectory=/home/pi/RpiEinky
-Environment=PATH=/home/pi/RpiEinky/eink_env/bin
-ExecStart=/home/pi/RpiEinky/eink_env/bin/python display_latest.py
+User=${USER}
+Group=gpio
+SupplementaryGroups=spi i2c gpio dialout
+WorkingDirectory=${HOME}/RpiEinky
+ExecStart=${HOME}/eink_env/bin/python ${HOME}/RpiEinky/run_eink_system.py
+ExecStop=/bin/kill -TERM $MAINPID
 Restart=always
 RestartSec=10
+TimeoutStartSec=30
+TimeoutStopSec=30
+KillMode=mixed
+KillSignal=SIGTERM
+StandardOutput=append:${HOME}/RpiEinky/logs/display.log
+StandardError=append:${HOME}/RpiEinky/logs/display.log
 
-# Logging
-StandardOutput=journal
-StandardError=journal
+# Environment variables for hardware access
+Environment=PYTHONPATH=${HOME}/RpiEinky
+Environment=DISPLAY=:0
+Environment=HOME=${HOME}
+Environment=USER=${USER}
+Environment=XDG_RUNTIME_DIR=/run/user/${UID}
+
+# Ensure clean restarts
+RemainAfterExit=no
 
 [Install]
 WantedBy=multi-user.target 
