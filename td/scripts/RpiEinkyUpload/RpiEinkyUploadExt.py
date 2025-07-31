@@ -1,4 +1,4 @@
-﻿
+
 import json
 import os
 from pathlib import Path
@@ -127,7 +127,7 @@ class RpiEinkyUploadExt:
 				'POST'
 			)
 			
-			debug(f"ðŸ–¥ï¸ Clearing e-ink display screen... (connection: {connection_id})")
+			debug(f"🖥️ Clearing e-ink display screen... (connection: {connection_id})")
 			
 			
 			return True
@@ -177,7 +177,7 @@ class RpiEinkyUploadExt:
 		
 	def onStart(self):
 		if self.evalGetinfoonstart:
-			debug("📺 Getting display info on start")
+			debug("?? Getting display info on start")
 			self.get_display_info()
 	
 	def onWebClientConnect(self, webClientDAT, id):
@@ -187,13 +187,13 @@ class RpiEinkyUploadExt:
 	
 	def onWebClientDisconnect(self, webClientDAT, id):
 		"""Called when WebclientDAT connection is closed"""
-		debug("🔌 WebclientDAT disconnected")
+		debug("?? WebclientDAT disconnected")
 	
 	def onWebClientResponse(self, webClientDAT, statusCode, headerDict, data, id):
 		"""Called when response is received from server"""
 		try:
 			if statusCode['code'] == 200:
-				debug(f"✅ Request successful (ID: {id})")
+				debug(f"? Request successful (ID: {id})")
 				if data:
 					try:
 						response_data = json.loads(data)
@@ -213,10 +213,10 @@ class RpiEinkyUploadExt:
 						debug(f"   Response: {data}")
 				
 			else:
-				debug(f"❌ Request failed: {statusCode['code']} - {headerDict}")
+				debug(f"? Request failed: {statusCode['code']} - {headerDict}")
 		except Exception as e:
 			debug(e)
-			debug(f"❌ Response handling error: {e}")
+			debug(f"? Response handling error: {e}")
 	
 	def saveImageToDisk(self, top_op):
 		"""Save an image from a TOP operator"""
@@ -480,11 +480,11 @@ class RpiEinkyUploadExt:
 			# self.ownerComp.par.Displaysource = source
 			
 			# Log the display info
-			debug(f"📺 Display Info: {display_type} ({width}×{height} {orientation})")
-			debug(f"📺 Native: {native_width}×{native_height} {native_orientation} (source: {source})")
+			debug(f"?? Display Info: {display_type} ({width}�{height} {orientation})")
+			debug(f"?? Native: {native_width}�{native_height} {native_orientation} (source: {source})")
 			
 		except Exception as e:
-			debug(f"❌ Display info parsing error: {e}")
+			debug(f"? Display info parsing error: {e}")
 
 
 
