@@ -208,10 +208,8 @@ class EinkDisplayHandler(FileSystemEventHandler):
         self.current_displayed_file = None
         self.last_welcome_screen_time = 0  # Track when welcome screen was last shown
 
-        # File transfer tracking variables
-        self.file_retry_counts = {}  # Track retry attempts per file
-        self.max_retry_attempts = 5  # Maximum retry attempts for file validation
-        self.retry_delays = [1, 2, 4, 8, 16]  # Exponential backoff delays (seconds)
+        # File processing variables (simplified with atomic operations)
+        self.last_processing_time = time.time()
 
         # Startup timer control
         self.startup_timer_active = True
@@ -688,97 +686,15 @@ class EinkDisplayHandler(FileSystemEventHandler):
             logger.error(f"Error getting priority display file: {e}")
             return None
 
-    def is_file_likely_transferring(self, file_path):
-        """Check if file is likely still being transferred based on recent activity"""
-        try:
-            if not file_path.exists():
-                return False
 
-            # Get file modification time
-            mtime = file_path.stat().st_mtime
-            current_time = time.time()
 
-            # Consider files modified in last 10 seconds as potentially transferring
-            time_since_modification = current_time - mtime
-
-            # Also consider file size - very recent small files might be headers/beginning of transfer
-            file_size = file_path.stat().st_size
-
-            # Files modified very recently (< 3 seconds) are likely still transferring
-            if time_since_modification < 3:
-                return True
-
-            # Larger files modified recently (< 10 seconds) might still be transferring
-            if file_size > 100 * 1024 and time_since_modification < 10:  # Files > 100KB
-                return True
-
-            return False
-
-        except Exception as e:
-            logger.debug(f"Error checking transfer status for {file_path.name}: {e}")
-            return False
-
-    def cleanup_old_retry_tracking(self):
-        """Clean up retry tracking for files that no longer exist or are very old"""
-        try:
-            current_time = time.time()
-            files_to_remove = []
-
-            for file_key in self.file_retry_counts.keys():
-                try:
-                    file_path = Path(file_key)
-                    if not file_path.exists():
-                        files_to_remove.append(file_key)
-                    else:
-                        # Remove tracking for files older than 1 hour
-                        mtime = file_path.stat().st_mtime
-                        if current_time - mtime > 3600:  # 1 hour
-                            files_to_remove.append(file_key)
-                except Exception:
-                    # If we can't check the file, remove it from tracking
-                    files_to_remove.append(file_key)
-
-            for file_key in files_to_remove:
-                del self.file_retry_counts[file_key]
-
-            if files_to_remove:
-                logger.debug(f"Cleaned up retry tracking for {len(files_to_remove)} old files")
-
-        except Exception as e:
-            logger.debug(f"Error during retry tracking cleanup: {e}")
-
-    def validate_file(self, file_path, check_stability=True):
-        """Validate that file is complete and readable"""
+    def validate_file(self, file_path):
+        """Validate that file is complete and readable (simplified - atomic operations ensure completeness)"""
         try:
             # Check file exists and has content
             if not file_path.exists() or file_path.stat().st_size == 0:
-                logger.debug(f"File is empty or doesn't exist: {file_path}")
+                logger.warning(f"File is empty or doesn't exist: {file_path}")
                 return False
-
-            # Check file size stability if requested (prevents race conditions)
-            if check_stability:
-                initial_size = file_path.stat().st_size
-                time.sleep(0.5)  # Wait half second
-
-                if not file_path.exists():
-                    logger.debug(f"File disappeared during stability check: {file_path}")
-                    return False
-
-                current_size = file_path.stat().st_size
-                if current_size != initial_size:
-                    logger.debug(f"File size changed during stability check ({initial_size} -> {current_size}): {file_path.name}")
-                    return False
-
-                # Additional stability check for larger files
-                if current_size > 1024 * 1024:  # Files > 1MB get extra verification
-                    time.sleep(0.5)  # Additional wait for large files
-                    if not file_path.exists():
-                        logger.debug(f"Large file disappeared during extended stability check: {file_path}")
-                        return False
-                    final_size = file_path.stat().st_size
-                    if final_size != current_size:
-                        logger.debug(f"Large file size still changing ({current_size} -> {final_size}): {file_path.name}")
-                        return False
 
             # For image files, try to open with PIL
             if file_path.suffix.lower() in ['.jpg', '.jpeg', '.png', '.bmp', '.gif']:
@@ -786,10 +702,10 @@ class EinkDisplayHandler(FileSystemEventHandler):
                     with Image.open(file_path) as img:
                         # Force loading to ensure file is complete
                         img.load()
-                        logger.info(f"File validation passed: {file_path.name} ({img.size[0]}x{img.size[1]}, {file_path.stat().st_size} bytes)")
+                        logger.info(f"Image validation passed: {file_path.name} ({img.size[0]}x{img.size[1]}, {file_path.stat().st_size} bytes)")
                         return True
                 except Exception as e:
-                    logger.debug(f"Image validation failed: {file_path.name} - {e}")
+                    logger.error(f"Image validation failed: {file_path.name} - {e}")
                     return False
 
             # For other files, just check readability
@@ -799,10 +715,10 @@ class EinkDisplayHandler(FileSystemEventHandler):
                 logger.info(f"File validation passed: {file_path.name} ({file_path.stat().st_size} bytes)")
                 return True
             except Exception as e:
-                logger.debug(f"File read validation failed: {file_path.name} - {e}")
+                logger.error(f"File read validation failed: {file_path.name} - {e}")
                 return False
         except Exception as e:
-            logger.debug(f"File validation error: {file_path.name} - {e}")
+            logger.error(f"File validation error: {file_path.name} - {e}")
             return False
 
     def display_buffer(self, image):
@@ -911,8 +827,8 @@ class EinkDisplayHandler(FileSystemEventHandler):
             self._process_command_file(file_path)
             return
 
-        # Skip hidden files and thumbnails
-        if file_path.name.startswith('.') or '_thumb.' in file_path.name:
+        # Skip hidden files, thumbnails, and temporary files
+        if file_path.name.startswith('.') or '_thumb.' in file_path.name or file_path.name.endswith('.tmp'):
             return
 
         self._process_regular_file(file_path)
@@ -1024,66 +940,26 @@ class EinkDisplayHandler(FileSystemEventHandler):
                 pass
 
     def _process_regular_file(self, file_path):
-        """Process regular file uploads with enhanced validation and retry logic"""
+        """Process regular file uploads (simplified - atomic operations ensure file completeness)"""
 
         # Update timing variables
         self.last_file_update_time = time.time()
+        self.last_processing_time = time.time()
 
-        # Periodic cleanup of old retry tracking (every 10th file processed)
-        if len(self.file_retry_counts) > 0 and hash(str(file_path)) % 10 == 0:
-            self.cleanup_old_retry_tracking()
+        logger.info(f"File watcher detected file: {file_path.name}, size: {file_path.stat().st_size} bytes")
 
-        # Initial delay to allow file system to settle
-        time.sleep(1.0)
+        # Brief delay to ensure file system operations complete
+        time.sleep(0.1)
 
-        # Get current retry count for this file
-        file_key = str(file_path)
-        retry_count = self.file_retry_counts.get(file_key, 0)
+        # Validate file is complete and readable (no retry needed with atomic operations)
+        if not self.validate_file(file_path):
+            logger.error(f"File validation failed: {file_path.name}")
+            self.display_error(file_path.name, "File validation failed")
+            return
 
-        # Check if file is likely still being transferred
-        is_transferring = self.is_file_likely_transferring(file_path)
+        logger.info(f"File validated successfully: {file_path.name}")
 
-        # Validate file is complete and readable
-        validation_passed = self.validate_file(file_path)
-
-        if not validation_passed:
-            if retry_count < self.max_retry_attempts:
-                # File validation failed, but we can retry
-                self.file_retry_counts[file_key] = retry_count + 1
-                retry_delay = self.retry_delays[min(retry_count, len(self.retry_delays) - 1)]
-
-                if is_transferring:
-                    logger.info(f"File likely still transferring, will retry validation in {retry_delay}s: {file_path.name} (attempt {retry_count + 1}/{self.max_retry_attempts})")
-                else:
-                    logger.warning(f"File validation failed, will retry in {retry_delay}s: {file_path.name} (attempt {retry_count + 1}/{self.max_retry_attempts})")
-
-                # Schedule retry with exponential backoff
-                threading.Timer(retry_delay, self._process_regular_file, args=[file_path]).start()
-                return
-            else:
-                # Max retries reached
-                logger.error(f"File validation failed after {self.max_retry_attempts} attempts: {file_path.name}")
-
-                # Only display error if file is not likely still transferring
-                # This prevents error screens during active transfers
-                if not is_transferring:
-                    self.display_error(file_path.name, f"File validation failed after {self.max_retry_attempts} attempts")
-                else:
-                    logger.info(f"Suppressing error display - file may still be transferring: {file_path.name}")
-
-                # Clean up retry tracking
-                if file_key in self.file_retry_counts:
-                    del self.file_retry_counts[file_key]
-                return
-
-        # File validation passed - clean up retry tracking
-        if file_key in self.file_retry_counts:
-            del self.file_retry_counts[file_key]
-
-        logger.info(f"File validation passed: {file_path.name}")
-
-        # Check if auto-display is enabled (use current setting, don't reload)
-        logger.info(f"Auto-display setting: {self.auto_display_uploads}")
+        # Check if auto-display is enabled
         if self.auto_display_uploads:
             try:
                 # Set this as the current displayed file first
@@ -1108,11 +984,7 @@ class EinkDisplayHandler(FileSystemEventHandler):
                     logger.warning(f"Display operation failed for {file_path.name}")
             except Exception as e:
                 logger.error(f"Error auto-displaying file {file_path.name}: {e}")
-                # Only display error if file is not likely still transferring
-                if not self.is_file_likely_transferring(file_path):
-                    self.display_error(file_path.name, str(e))
-                else:
-                    logger.info(f"Suppressing error display - file may still be transferring: {file_path.name}")
+                self.display_error(file_path.name, str(e))
         else:
             logger.info(f"Auto-display disabled - file {file_path.name} not displayed")
 
@@ -1206,7 +1078,7 @@ class EinkDisplayHandler(FileSystemEventHandler):
 
         except Exception as e:
             logger.error(f"Error displaying image {file_path.name}: {e}")
-            self.display_error(file_path.name, str(e))
+           # self.display_error(file_path.name, str(e))
             return False
 
     def display_text_file(self, file_path):
@@ -1268,7 +1140,7 @@ class EinkDisplayHandler(FileSystemEventHandler):
 
         except Exception as e:
             logger.error(f"Error displaying text file {file_path.name}: {e}")
-            self.display_error(file_path.name, str(e))
+            #self.display_error(file_path.name, str(e))
             return False
 
     def display_pdf(self, file_path):
@@ -1310,7 +1182,7 @@ class EinkDisplayHandler(FileSystemEventHandler):
 
         except Exception as e:
             logger.error(f"Error displaying PDF {file_path.name}: {e}")
-            self.display_error(file_path.name, str(e))
+            #self.display_error(file_path.name, str(e))
             return False
 
     def display_file_info(self, file_path):
@@ -1367,7 +1239,7 @@ class EinkDisplayHandler(FileSystemEventHandler):
 
         except Exception as e:
             logger.error(f"Error displaying file info {file_path.name}: {e}")
-            self.display_error(file_path.name, str(e))
+            #self.display_error(file_path.name, str(e))
             return False
 
     def display_error(self, filename, error_msg):
