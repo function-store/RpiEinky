@@ -4,6 +4,21 @@ A comprehensive e-ink display management system designed for [Raspberry Pi](http
 
 ![E-Ink Display System](https://github.com/function-store/RpiEinky/raw/main/docs/header.jpg)
 
+## Table of Contents
+
+- [Purpose](#purpose)
+- [Features](#features)
+- [Installation](#installation)
+- [TouchDesigner Integration](#touchdesigner-integration)
+- [Architecture](#architecture)
+- [Command Line Arguments](#command-line-arguments)
+- [Web Server API](#web-server-api)
+- [Services](#services)
+- [Extending Display Support](#extending-display-support)
+- [Troubleshooting](#troubleshooting)
+- [Dependencies](#dependencies)
+- [Raspberry Pi Resources](#raspberry-pi-resources)
+- [License](#license)
 
 ## Purpose
 
