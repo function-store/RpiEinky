@@ -1,4 +1,4 @@
-# E-Ink File Display System
+# E-Ink Managed File Display System
 
 A comprehensive e-ink display management system designed for [Raspberry Pi](https://www.raspberrypi.com/) with web interface supporting multiple [WaveShare](https://www.waveshare.com/) e-paper displays. Features drag-and-drop uploads, file gallery, and remote management.
 

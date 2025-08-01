@@ -6,7 +6,7 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Path to virtual environment (relative to script location)
-VENV_PATH="$SCRIPT_DIR/../eink_env"
+VENV_PATH="$SCRIPT_DIR/eink_env"
 
 # Check if script is being sourced (correct way) or executed directly (wrong way)
 if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
@@ -29,7 +29,7 @@ fi
 # Check if virtual environment exists
 if [ ! -d "$VENV_PATH" ]; then
     echo "❌ Virtual environment not found at: $VENV_PATH"
-    echo "Please create it first with: python3 -m venv ../eink_env"
+    echo "Please create it first with: python3 -m venv eink_env"
     return 1
 fi
 
@@ -54,4 +54,4 @@ if [ -n "$VIRTUAL_ENV" ]; then
 else
     echo "❌ Failed to activate virtual environment"
     return 1
-fi 
+fi
