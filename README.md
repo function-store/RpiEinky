@@ -9,9 +9,23 @@ A comprehensive e-ink display management system designed for [Raspberry Pi](http
 
 - **Real-time file monitoring** - Watches `~/watched_files` folder for new files
 - **Web management interface** - Modern responsive UI for remote file uploads and management
-- **Multi-display support** - Supports 4-color grayscale and 7-color displays with automatic orientation handling
+- **Multi-display support** - Supports 4-color grayscale and 7-color displays with automatic orientation handling (see )
 - **TouchDesigner integration** - HTTP upload client for remote file management
 - **Auto-startup service** - Run automatically on system boot with systemd
+
+### Supported Devices
+
+#### WaveShare
+
+- **epd2in15g** - 2.15" grayscale (160×296, portrait native) - [link](https://www.waveshare.com/2.15inch-e-paper-hat-plus-g.htm)
+- **epd7in3e** - 7.3" 7-color (800×480, landscape native) - [link](https://www.waveshare.com/7.3inch-e-paper-hat-e.htm)
+- **epd13in3E** - 13.3" 7-color (1200×1600, portrait native) - [link](https://www.waveshare.com/13.3inch-e-paper-hat-plus-e.htm)
+
+> See [Extending Display Support](#extending-display-support) for instructions how to integrate other models to the unified controller interface!
+
+#### Raspberry Pi
+
+Tested with [Raspberryi Pi Zero](https://www.raspberrypi.com/products/raspberry-pi-zero/) and [Raspberry Pi 5](https://www.raspberrypi.com/products/raspberry-pi-5/), should work with all models!
 
 ## Features
 
@@ -21,7 +35,7 @@ A comprehensive e-ink display management system designed for [Raspberry Pi](http
 - **One-Click Display** - Click any file to display it immediately on the e-ink screen
 - **File Management** - Delete individual files or multiple files at once
 - **Responsive Design** - Works on desktop, tablet, and mobile devices
-- **Network Access** - Access from any device on your local network
+- **Network Access** - Access from any device on your local network (TODO remote network)
 
 ### Display Capabilities
 - **Multiple File Types** - Images (JPG, PNG, BMP), text files, PDFs, and more
@@ -32,12 +46,11 @@ A comprehensive e-ink display management system designed for [Raspberry Pi](http
 
 ### TouchDesigner Integration
 - **Direct Upload** - Send images directly from TouchDesigner
-- **Real-time Updates** - Display changes immediately
 - **Component Library** - Reusable TouchDesigner components included
 
 ## Installation
 
-> **⚠️ Installation Disclaimer**: This system is designed for Raspberry Pi. Installation steps may vary based on your specific e-paper display model and Raspberry Pi model. The Waveshare library structure, file locations, and import names can differ between display models and library versions. 
+> **⚠️ Installation Disclaimer**: This system is designed for Raspberry Pi. Installation steps may vary based on your specific e-paper display model and Raspberry Pi model. The Waveshare library structure, file locations, and import names can differ between display models and library versions.
 > **‼️IMPORTANT**: Always refer to your display's specific documentation and adjust paths and procedures accordingly.
 
 ### 1. Install System Dependencies
@@ -118,8 +131,6 @@ source eink_env/bin/activate
 python display_latest.py
 ```
 
-## Quick Start Guide
-
 ### 6. Start the Complete System
 After successful installation, start the full system with web interface:
 
@@ -144,7 +155,7 @@ http://192.168.1.100:5000
 - **Drag & Drop**: Simply drag files into the web interface
 - **File Gallery**: Browse and manage uploaded files
 - **Direct Display**: Click any file to display it immediately
-- **TouchDesigner Integration**: Use the TouchDesigner components in the `td` folder
+- **TouchDesigner Integration**: Use the TouchDesigner component in the `td/modules/releases` folder
 
 ### 9. Set Up Auto-Start (Optional)
 To run automatically on boot:
@@ -159,7 +170,7 @@ chmod +x ~/RpiEinky/install_services.sh
 
 ## TouchDesigner Integration
 
-The `td` folder contains an example `.toe` file and a reusable `.tox` file to send images from TouchDesigner as well as manage the folder structure. For further configuration please refer to the `Settings` section of the web interface.
+The `td` folder contains an example `.toe` file and `td/modules/release` a reusable `.tox` file to send images from TouchDesigner as well as manage the folder structure. For further configuration please refer to the `Settings` section of the web interface.
 
 ## Architecture
 
@@ -185,13 +196,6 @@ RpiEinky/
 ├── .epd_config.json              # Display configuration
 └── ~/watched_files/              # Monitored folder
 ```
-
-### Display Support
-- **epd2in15g** - 2.15" grayscale (160×296, portrait native)
-- **epd13in3E** - 13.3" 7-color (1200×1600, portrait native)  
-- **epd7in3e** - 7.3" 7-color (800×480, landscape native)
-
-> To add more supported devices to the see the section [Extending Display Support](#extending-display-support)
 
 ### Manufacturer Safety Features
 The system includes optional manufacturer-recommended safety features to prevent display damage:
@@ -456,34 +460,34 @@ class EPDNewDisplayAdapter(EPDAdapter):
             self.epd = epdnewdisplay.EPD()
         except ImportError:
             raise ImportError("New display library not found")
-    
+
     @property
     def display_type(self) -> str:
         return "epdnewdisplay"
-    
+
     def init(self) -> int:
         return self.epd.init()
-    
+
     def display(self, image) -> None:
         self.epd.display(image)
-    
+
     def clear(self, color: Optional[int] = None) -> None:
         self.epd.Clear(color or self.WHITE)
-    
+
     def sleep(self) -> None:
         self.epd.sleep()
-    
+
     def getbuffer(self, image: Image.Image):
         return self.epd.getbuffer(image)
-    
+
     @property
     def width(self) -> int:
         return self.epd.width
-    
+
     @property
     def height(self) -> int:
         return self.epd.height
-    
+
     # ... other required properties
 ```
 
