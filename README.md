@@ -53,6 +53,14 @@ Tested with [Raspberryi Pi Zero](https://www.raspberrypi.com/products/raspberry-
 > **⚠️ Installation Disclaimer**: This system is designed for Raspberry Pi. Installation steps may vary based on your specific e-paper display model and Raspberry Pi model. The Waveshare library structure, file locations, and import names can differ between display models and library versions.
 > **‼️IMPORTANT**: Always refer to your display's specific documentation and adjust paths and procedures accordingly.
 
+### 0. Directory
+
+After downloading or cloning this repository make soure you are inside the folder for the installation and operation.
+
+```bash
+cd ~/RpiEinky
+```
+
 ### 1. Install System Dependencies
 ```bash
 sudo apt update
