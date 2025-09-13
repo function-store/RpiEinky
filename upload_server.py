@@ -7,11 +7,20 @@ import os
 import time
 import json
 import base64
+import hashlib
 from pathlib import Path
-from flask import Flask, request, jsonify, render_template, send_from_directory, url_for
+from flask import Flask, request, jsonify, render_template, send_from_directory, url_for, session, redirect, flash
 from werkzeug.utils import secure_filename
 from PIL import Image
 import logging
+from functools import wraps
+
+# Load environment variables from .env file if it exists
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # python-dotenv not installed, use system environment variables
 
 # Configure logging
 import os
@@ -31,6 +40,20 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max file size
+
+# Security configuration
+app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY', 'your-secret-key-change-this-in-production')
+# Only require secure cookies in production (HTTPS)
+app.config['SESSION_COOKIE_SECURE'] = os.environ.get('FLASK_ENV') == 'production'
+app.config['SESSION_COOKIE_HTTPONLY'] = True  # Prevent JavaScript access to session cookie
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # CSRF protection
+
+# Admin password configuration
+ADMIN_PASSWORD_HASH = os.environ.get('ADMIN_PASSWORD_HASH',
+    hashlib.sha256('admin123'.encode()).hexdigest())  # Default password: admin123
+
+# API key for TouchDesigner (generate a secure random key)
+API_KEY = os.environ.get('API_KEY', 'td-api-key-change-this-in-production')
 
 
 
@@ -65,6 +88,34 @@ DEFAULT_SETTINGS = {
 
 # Image extensions for thumbnail generation
 IMAGE_EXTENSIONS = {'jpg', 'jpeg', 'png', 'bmp', 'gif'}
+
+# Authentication functions
+def login_required(f):
+    """Decorator to require authentication for routes"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        # Check for API key authentication (TouchDesigner)
+        api_key = request.headers.get('X-API-Key') or request.headers.get('Authorization')
+        if api_key:
+            # Remove "Bearer " prefix if present
+            if api_key.startswith('Bearer '):
+                api_key = api_key[7:]
+            if api_key == API_KEY:
+                return f(*args, **kwargs)
+            else:
+                return jsonify({'error': 'Invalid API key'}), 401
+
+        # Check for session authentication (web interface)
+        if not session.get('logged_in'):
+            if request.is_json:
+                return jsonify({'error': 'Authentication required. Use X-API-Key header or login via web interface.'}), 401
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+def check_password(password):
+    """Check if provided password matches admin password"""
+    return hashlib.sha256(password.encode()).hexdigest() == ADMIN_PASSWORD_HASH
 
 def allowed_file(filename):
     """Check if file extension is allowed"""
@@ -253,66 +304,192 @@ def display_file_on_eink(filename):
         return False
 
 @app.route('/upload', methods=['POST', 'PUT'])
+@login_required
 def upload_file():
     """Handle file upload from TouchDesigner"""
     try:
         if request.method == 'POST':
-            # Handle multipart form data (traditional upload)
-            if 'file' not in request.files:
-                return jsonify({'error': 'No file provided'}), 400
+            # Handle both multipart form data and raw binary data
 
-            file = request.files['file']
-            if file.filename == '':
-                return jsonify({'error': 'No file selected'}), 400
+            # Check if this is raw binary data (TouchDesigner tunnel upload)
+            if request.headers.get('Content-Type') == 'application/octet-stream' and request.headers.get('X-Filename'):
+                # Handle raw binary data from TouchDesigner
+                filename = request.headers.get('X-Filename', 'uploaded_file')
+                file_data = request.get_data()
 
-            if file and allowed_file(file.filename):
+                logger.info(f"POST raw binary upload: {filename}, size: {len(file_data)} bytes")
+
+                if not file_data or len(file_data) == 0:
+                    logger.error("No file data received in POST request")
+                    return jsonify({'error': 'No file data received'}), 400
+
+                if not allowed_file(filename):
+                    return jsonify({'error': 'File type not allowed'}), 400
+
                 # Secure the filename
-                filename = secure_filename(file.filename)
+                filename = secure_filename(filename)
 
                 # Add timestamp to avoid conflicts
                 timestamp = int(time.time())
                 name, ext = os.path.splitext(filename)
                 filename = f"{name}_{timestamp}{ext}"
 
-                # Save file to watched folder using atomic operation
+                # Save file data using atomic operation
                 filepath = os.path.join(UPLOAD_FOLDER, filename)
                 temp_filepath = filepath + '.tmp'
 
                 # Write to temporary file first
-                logger.info(f"Starting file save to temp: {temp_filepath}")
-                file.save(temp_filepath)
-                logger.info(f"File save completed, size: {os.path.getsize(temp_filepath)} bytes")
+                logger.info(f"Starting raw data write to temp: {temp_filepath}, data size: {len(file_data)} bytes")
+                with open(temp_filepath, 'wb') as f:
+                    f.write(file_data)
+                logger.info(f"Raw data write completed, file size: {os.path.getsize(temp_filepath)} bytes")
 
-                # Atomically move to final location (only then will watcher see it)
+                # Atomically move to final location
                 logger.info(f"Performing atomic rename from {temp_filepath} to {filepath}")
                 os.rename(temp_filepath, filepath)
                 logger.info(f"Atomic rename completed")
 
-                # Generate thumbnail if it's an image
-                generate_thumbnail(filepath, filename)
+                # Generate thumbnail
+                try:
+                    generate_thumbnail(filepath)
+                    logger.info(f"Thumbnail generated for {filename}")
+                except Exception as e:
+                    logger.error(f"Thumbnail generation failed for {filename}: {e}")
 
-                # Check if auto-display is enabled and display the file
+                # Auto-display if enabled
                 settings = load_settings()
                 if settings.get('auto_display_upload', True):
                     logger.info(f"Auto-display enabled, displaying uploaded file: {filename}")
-                    success = display_file_on_eink(filename)
-                    logger.info(f"Auto-display result for {filename}: {success}")
+                    result = display_file_on_eink(filename)
+                    logger.info(f"Auto-display result for {filename}: {result}")
                 else:
                     logger.info(f"Auto-display disabled, not displaying uploaded file: {filename}")
 
-                logger.info(f"File uploaded (POST): {filename}")
+                logger.info(f"File uploaded (POST binary): {filename}")
                 return jsonify({
                     'message': 'File uploaded successfully',
                     'filename': filename,
                     'size': os.path.getsize(filepath)
                 }), 200
+
+            # Handle multipart form data (traditional upload)
+            elif 'file' in request.files:
+                file = request.files['file']
+                if file.filename == '':
+                    return jsonify({'error': 'No file selected'}), 400
+
+                if file and allowed_file(file.filename):
+                    # Secure the filename
+                    filename = secure_filename(file.filename)
+
+                    # Add timestamp to avoid conflicts
+                    timestamp = int(time.time())
+                    name, ext = os.path.splitext(filename)
+                    filename = f"{name}_{timestamp}{ext}"
+
+                    # Save file to watched folder using atomic operation
+                    filepath = os.path.join(UPLOAD_FOLDER, filename)
+                    temp_filepath = filepath + '.tmp'
+
+                    # Write to temporary file first
+                    logger.info(f"Starting file save to temp: {temp_filepath}")
+                    file.save(temp_filepath)
+                    logger.info(f"File save completed, size: {os.path.getsize(temp_filepath)} bytes")
+
+                    # Atomically move to final location (only then will watcher see it)
+                    logger.info(f"Performing atomic rename from {temp_filepath} to {filepath}")
+                    os.rename(temp_filepath, filepath)
+                    logger.info(f"Atomic rename completed")
+
+                    # Generate thumbnail if it's an image
+                    generate_thumbnail(filepath, filename)
+
+                    # Check if auto-display is enabled and display the file
+                    settings = load_settings()
+                    if settings.get('auto_display_upload', True):
+                        logger.info(f"Auto-display enabled, displaying uploaded file: {filename}")
+                        success = display_file_on_eink(filename)
+                        logger.info(f"Auto-display result for {filename}: {success}")
+                    else:
+                        logger.info(f"Auto-display disabled, not displaying uploaded file: {filename}")
+
+                    logger.info(f"File uploaded (POST): {filename}")
+                    return jsonify({
+                        'message': 'File uploaded successfully',
+                        'filename': filename,
+                        'size': os.path.getsize(filepath)
+                    }), 200
+                else:
+                    return jsonify({'error': 'File type not allowed'}), 400
             else:
-                return jsonify({'error': 'File type not allowed'}), 400
+                return jsonify({'error': 'No file provided'}), 400
 
         elif request.method == 'PUT':
             # Handle raw file data (TouchDesigner WebclientDAT uploadFile)
+            # TouchDesigner sends data differently, try multiple approaches
+
+            # Debug: Log all request details
+            logger.info(f"PUT request debug:")
+            logger.info(f"  Headers: {dict(request.headers)}")
+            logger.info(f"  Content-Type: {request.content_type}")
+            logger.info(f"  Content-Length: {request.content_length}")
+            logger.info(f"  Has files: {bool(request.files)}")
+            logger.info(f"  Files keys: {list(request.files.keys()) if request.files else 'None'}")
+            logger.info(f"  Form data: {dict(request.form) if request.form else 'None'}")
+            logger.info(f"  Raw data length: {len(request.data) if request.data else 0}")
+            logger.info(f"  Via Cloudflare: {'CF-Ray' in request.headers}")
+            logger.info(f"  Remote addr: {request.remote_addr}")
+            logger.info(f"  X-Forwarded-For: {request.headers.get('X-Forwarded-For', 'None')}")
+
             # Get filename from headers or use a default
             filename = request.headers.get('X-Filename', 'uploaded_file')
+
+            # Try to get file data from different sources
+            file_data = None
+            data_source = "unknown"
+
+            # Method 1: Check if there's form data with file
+            if request.files:
+                logger.info("Trying method 1: form files")
+                file_obj = list(request.files.values())[0]  # Get first file
+                file_data = file_obj.read()
+                data_source = "form_files"
+                if not filename or filename == 'uploaded_file':
+                    filename = file_obj.filename or 'uploaded_file'
+                logger.info(f"Form files method: got {len(file_data)} bytes")
+
+            # Method 2: Check raw request data
+            elif request.data and len(request.data) > 0:
+                logger.info("Trying method 2: request.data")
+                file_data = request.data
+                data_source = "request_data"
+                logger.info(f"Request data method: got {len(file_data)} bytes")
+
+            # Method 3: Check if it's in the request stream
+            elif hasattr(request, 'stream'):
+                logger.info("Trying method 3: request.stream")
+                try:
+                    file_data = request.stream.read()
+                    data_source = "request_stream"
+                    logger.info(f"Request stream method: got {len(file_data) if file_data else 0} bytes")
+                except Exception as e:
+                    logger.info(f"Request stream method failed: {e}")
+                    pass
+
+            # Method 4: Try to read from request directly
+            if not file_data:
+                logger.info("Trying method 4: request.get_data()")
+                try:
+                    file_data = request.get_data()
+                    data_source = "get_data"
+                    logger.info(f"Get data method: got {len(file_data) if file_data else 0} bytes")
+                except Exception as e:
+                    logger.info(f"Get data method failed: {e}")
+                    pass
+
+            if not file_data or len(file_data) == 0:
+                logger.error("No file data received in PUT request - all methods failed")
+                return jsonify({'error': 'No file data received'}), 400
 
             # If no extension, try to guess from content-type
             if '.' not in filename:
@@ -336,14 +513,14 @@ def upload_file():
             name, ext = os.path.splitext(filename)
             filename = f"{name}_{timestamp}{ext}"
 
-            # Save raw data to file using atomic operation
+            # Save file data using atomic operation
             filepath = os.path.join(UPLOAD_FOLDER, filename)
             temp_filepath = filepath + '.tmp'
 
             # Write to temporary file first
-            logger.info(f"Starting raw data write to temp: {temp_filepath}, data size: {len(request.data)} bytes")
+            logger.info(f"Starting raw data write to temp: {temp_filepath}, data size: {len(file_data)} bytes (source: {data_source})")
             with open(temp_filepath, 'wb') as f:
-                f.write(request.data)
+                f.write(file_data)
             logger.info(f"Raw data write completed, file size: {os.path.getsize(temp_filepath)} bytes")
 
             # Atomically move to final location (only then will watcher see it)
@@ -375,6 +552,7 @@ def upload_file():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/upload_text', methods=['POST'])
+@login_required
 def upload_text():
     """Handle text content upload from TouchDesigner"""
     try:
@@ -421,7 +599,7 @@ def upload_text():
 
 @app.route('/status', methods=['GET'])
 def status():
-    """Get server status"""
+    """Get server status - no auth required for health checks"""
     return jsonify({
         'status': 'running',
         'upload_folder': UPLOAD_FOLDER,
@@ -439,6 +617,7 @@ def get_settings():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/settings', methods=['POST'])
+@login_required
 def update_settings():
     """Update settings"""
     try:
@@ -657,6 +836,7 @@ def get_displayed_file():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/clear_screen', methods=['POST'])
+@login_required
 def clear_screen():
     """Clear the e-ink display screen (without removing files)"""
     try:
@@ -685,6 +865,7 @@ def clear_screen():
 # ============ NEW API ROUTES ============
 
 @app.route('/display_file', methods=['POST'])
+@login_required
 def display_file():
     """Display a specific file on the e-ink display"""
     try:
@@ -707,6 +888,7 @@ def display_file():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/delete_file', methods=['POST'])
+@login_required
 def delete_file():
     """Delete a specific file"""
     try:
@@ -740,6 +922,7 @@ def delete_file():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/delete_multiple', methods=['POST'])
+@login_required
 def delete_multiple_files():
     """Delete multiple files"""
     try:
@@ -872,9 +1055,36 @@ def get_display_info():
         logger.error(f"Error getting display info: {e}")
         return jsonify({'error': str(e)}), 500
 
+# ============ AUTHENTICATION ROUTES ============
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    """Login page"""
+    if request.method == 'POST':
+        password = request.form.get('password', '')
+        if check_password(password):
+            session['logged_in'] = True
+            session.permanent = True
+            flash('Successfully logged in!', 'success')
+            next_page = request.args.get('next')
+            return redirect(next_page) if next_page else redirect(url_for('index'))
+        else:
+            flash('Invalid password. Please try again.', 'error')
+            logger.warning(f"Failed login attempt from {request.remote_addr}")
+
+    return render_template('login.html')
+
+@app.route('/logout')
+def logout():
+    """Logout and clear session"""
+    session.pop('logged_in', None)
+    flash('You have been logged out.', 'info')
+    return redirect(url_for('login'))
+
 # ============ WEB INTERFACE ROUTES ============
 
 @app.route('/')
+@login_required
 def index():
     """Main web interface"""
     return render_template('index.html')
@@ -885,6 +1095,7 @@ def favicon():
     return send_from_directory('static', 'favicon.ico')
 
 @app.route('/api/files')
+@login_required
 def api_list_files():
     """Enhanced file listing with thumbnails and metadata"""
     try:
@@ -932,7 +1143,9 @@ if __name__ == '__main__':
     logger.info(f"Allowed extensions: {ALLOWED_EXTENSIONS}")
 
     # Get host and port from environment or use defaults
-    host = os.environ.get('FLASK_HOST', '0.0.0.0')
+    # In production with Cloudflare tunnel, bind to localhost only for security
+    default_host = '127.0.0.1' if os.environ.get('FLASK_ENV') == 'production' else '0.0.0.0'
+    host = os.environ.get('FLASK_HOST', default_host)
     port = int(os.environ.get('FLASK_PORT', 5000))
 
     logger.info(f"Server will run on {host}:{port}")

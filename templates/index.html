@@ -14,6 +14,11 @@
         <header class="header">
             <div class="header-content">
                 <h1><i class="fas fa-tv"></i> E-ink Display Manager</h1>
+                <div class="header-actions">
+                    <a href="{{ url_for('logout') }}" class="logout-btn" title="Logout">
+                        <i class="fas fa-sign-out-alt"></i>
+                    </a>
+                </div>
                 <div class="header-info">
                     <div class="status-indicator" id="status-indicator">
                         <span class="status-dot"></span>
@@ -96,11 +101,11 @@
                     </span>
                 </div>
             </div>
-            
+
             <div class="files-grid" id="files-grid">
                 <!-- Files will be loaded here -->
             </div>
-            
+
             <div class="empty-state" id="empty-state" style="display: none;">
                 <i class="fas fa-folder-open empty-icon"></i>
                 <h3>No files yet</h3>
@@ -167,7 +172,7 @@
                             Choose how the display content is oriented. <strong>Portrait modes</strong> rotate the content 90° for vertical mounting.
                         </p>
                     </div>
-                    
+
                     <div class="setting-group">
                         <label for="image-crop-mode">Image Processing Mode:</label>
                         <select id="image-crop-mode" class="setting-input">
@@ -180,7 +185,7 @@
                         </p>
                     </div>
                 </div>
-                
+
                 <!-- Upload Behavior -->
                 <div class="settings-section">
                     <h4><i class="fas fa-upload"></i> Upload Behavior</h4>
@@ -191,7 +196,7 @@
                             Automatically display files when they are uploaded
                         </p>
                     </div>
-                    
+
                     <div class="setting-group">
                         <label for="thumbnail-quality">Thumbnail Quality:</label>
                         <input type="range" id="thumbnail-quality" class="setting-input" min="50" max="95" step="5">
@@ -201,7 +206,7 @@
                         </p>
                     </div>
                 </div>
-                
+
                 <!-- Timing Control -->
                 <div class="settings-section">
                     <h4><i class="fas fa-clock"></i> Timing Control</h4>
@@ -212,7 +217,7 @@
                             Enable the automatic startup display timer. When enabled, files will be displayed automatically on startup.
                         </p>
                     </div>
-                    
+
                     <div class="setting-group">
                         <label for="startup-delay">Startup Delay (minutes):</label>
                         <input type="number" id="startup-delay" class="setting-input" min="0" max="60" step="1">
@@ -221,7 +226,7 @@
                         </p>
                     </div>
                 </div>
-                
+
                 <!-- Display Health Settings -->
                 <div class="settings-section">
                     <h4><i class="fas fa-shield-alt"></i> Display Health</h4>
@@ -232,7 +237,7 @@
                             Enable the automatic refresh timer. When enabled, periodic refresh will occur to prevent ghosting.
                         </p>
                     </div>
-                    
+
                     <div class="setting-group">
                         <label for="refresh-interval">Refresh Interval (hours):</label>
                         <input type="number" id="refresh-interval" class="setting-input" min="1" max="168" step="1">
@@ -240,7 +245,7 @@
                             How often to refresh the display to prevent ghosting (default: 24 hours)
                         </p>
                     </div>
-                    
+
                     <div class="setting-group">
                         <label for="enable-manufacturer-timing">Enable Manufacturer Timing Requirements:</label>
                         <input type="checkbox" id="enable-manufacturer-timing" class="setting-input">
@@ -248,12 +253,12 @@
                             Enforces 180-second minimum between refreshes. <strong>May affect rapid uploads</strong> - files will be queued and displayed after timing allows.
                         </p>
                     </div>
-                    
+
                     <div class="setting-group">
                         <label for="enable-sleep-mode">Enable Sleep Mode:</label>
                         <input type="checkbox" id="enable-sleep-mode" class="setting-input">
                         <p class="setting-description">
-                            Puts display to sleep between operations for power efficiency and display health. 
+                            Puts display to sleep between operations for power efficiency and display health.
                             <strong>Recommended</strong> - adds ~0.5-1 second wake time per operation but prevents display damage.
                         </p>
                     </div>
@@ -268,4 +273,4 @@
 
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
-</html> 
+</html>

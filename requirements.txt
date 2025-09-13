@@ -7,6 +7,7 @@ RPi.GPIO==0.7.1
 lgpio==0.2.2.0
 Flask==2.3.3
 requests==2.31.0
+python-dotenv==1.0.0
 
 # Optional dependencies for PDF support
 # pdf2image requires poppler-utils to be installed on the system:
@@ -16,6 +17,6 @@ requests==2.31.0
 
 # Note: The waveshare_epd library should be installed separately
 # from the Waveshare e-Paper repository:
-# https://github.com/waveshare/e-Paper 
+# https://github.com/waveshare/e-Paper
 
 # or use sudo apt update && sudo apt install python3-watchdog python3-pil python3-pdf2image poppler-utils

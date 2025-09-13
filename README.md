@@ -188,12 +188,62 @@ To run automatically on boot:
 chmod +x ~/RpiEinky/install_services.sh
 ~/RpiEinky/install_services.sh
 
+# REQUIRED: Set up admin password and API key for authentication
+python3 setup_admin_password.py
+
 # The system will now start automatically on boot
 ```
+
+**🔐 Authentication Required:** As of the latest version, the web interface requires authentication. You **must** run `python3 setup_admin_password.py` to set up admin credentials before accessing the web interface, even for local-only usage.
 
 ## TouchDesigner Integration
 
 The `td` folder contains an example `.toe` file and `td/modules/release` a reusable `.tox` file to send images from TouchDesigner as well as manage the folder structure. For further configuration please refer to the `Settings` section of the web interface.
+
+## Internet Access Setup
+
+To access your E-ink display from anywhere on the internet with secure authentication:
+
+**📖 See [INTERNET_SETUP_README.md](INTERNET_SETUP_README.md) for complete setup guide**
+
+**🚀 Quick Start:**
+```bash
+# 1. Get a domain and add it to Cloudflare (free .tk domain works)
+# 2. Run the setup (includes admin password creation)
+./setup_internet_access.sh
+
+# 3. Start the internet-enabled server
+./start_internet_server.sh
+```
+
+**Result:** Secure access at `https://eink.yourdomain.com` with:
+- **Admin login page** for web interface management
+- **API key authentication** for TouchDesigner integration
+- **Automatic HTTPS** and security hardening
+
+### Authentication System
+
+The internet-enabled version includes secure authentication:
+
+**Web Interface:**
+- **Login page** at `https://yourdomain.com/login`
+- **Admin password** protection for all management functions
+- **Session-based** authentication with secure cookies
+- **Logout button** in the header
+
+**TouchDesigner Integration:**
+- **API key authentication** for automated uploads
+- **Smart upload method**: Uses PUT locally, POST through tunnel
+- **Automatic tunnel detection** for optimal compatibility
+- **No login required** - use custom headers
+
+**Password Management:**
+```bash
+# Set up or change admin password and API key
+python3 setup_admin_password.py
+```
+
+**Note:** TouchDesigner uploads automatically work through both local network and internet tunnel with the same configuration.
 
 ## Architecture
 
