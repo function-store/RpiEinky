@@ -8,6 +8,7 @@ import time
 import json
 import base64
 import hashlib
+import random
 from pathlib import Path
 from flask import Flask, request, jsonify, render_template, send_from_directory, url_for, session, redirect, flash
 from werkzeug.utils import secure_filename
@@ -83,7 +84,23 @@ DEFAULT_SETTINGS = {
     'enable_refresh_timer': True,      # Enable automatic refresh timer
     'enable_manufacturer_timing': False,  # Enable manufacturer timing requirements (180s minimum)
     'enable_sleep_mode': True,  # Enable sleep mode between operations (power efficiency)
-    'orientation': 'landscape'  # Display orientation: 'landscape', 'portrait', 'landscape_flipped', 'portrait_flipped'
+    'orientation': 'landscape',  # Display orientation: 'landscape', 'portrait', 'landscape_flipped', 'portrait_flipped'
+    # Playlist settings
+    'playlist_enabled': True,          # Enable playlist mode
+    'playlist_interval_minutes': 5,    # Minutes between playlist image changes
+    'playlist_current_name': 'default', # Name of currently active playlist
+    'playlists': {                     # Dictionary of named playlists
+        'default': {
+            'name': 'Default Playlist',
+            'files': [],
+            'current_index': 0,
+            'last_change': 0,
+            'randomize': False
+        }
+    },
+    'display_mode': 'playlist',        # 'manual', 'playlist', or 'live' (TouchDesigner upload)
+    'live_mode_timeout_minutes': 30,   # Minutes to wait before returning to playlist from live mode (0 = no timeout)
+    'live_mode_start_time': 0          # Timestamp when live mode started
 }
 
 # Image extensions for thumbnail generation
@@ -179,14 +196,59 @@ def load_settings():
         return DEFAULT_SETTINGS.copy()
 
 def save_settings(settings):
-    """Save settings to file"""
+    """Save settings to file atomically with rolling backups.
+
+    Strategy:
+    - Write to SETTINGS_FILE.tmp then os.replace() -> atomic on POSIX/Win10+
+    - Keep up to 5 timestamped backups in the same directory
+    """
     try:
-        with open(SETTINGS_FILE, 'w') as f:
+        settings_dir = os.path.dirname(SETTINGS_FILE)
+        os.makedirs(settings_dir, exist_ok=True)
+
+        # Create a timestamped backup if the file exists and is non-empty
+        if os.path.exists(SETTINGS_FILE):
+            try:
+                if os.path.getsize(SETTINGS_FILE) > 0:
+                    ts = datetime.now().strftime('%Y%m%d-%H%M%S')
+                    backup_file = os.path.join(settings_dir, f"settings.{ts}.bak.json")
+                    try:
+                        # Best-effort copy existing file
+                        with open(SETTINGS_FILE, 'r') as src, open(backup_file, 'w') as dst:
+                            dst.write(src.read())
+                        logger.info(f"Created settings backup: {backup_file}")
+                    except Exception as e:
+                        logger.warning(f"Failed to create settings backup: {e}")
+
+                    # Prune old backups, keep last 5
+                    try:
+                        backups = sorted([
+                            p for p in Path(settings_dir).glob('settings.*.bak.json')
+                        ], key=lambda p: p.stat().st_mtime, reverse=True)
+                        for old in backups[5:]:
+                            old.unlink(missing_ok=True)
+                    except Exception as e:
+                        logger.warning(f"Failed to prune old backups: {e}")
+            except Exception:
+                pass
+
+        # Atomic write via temp + replace
+        tmp_path = SETTINGS_FILE + '.tmp'
+        with open(tmp_path, 'w') as f:
             json.dump(settings, f, indent=2)
-        logger.info("Settings saved successfully")
+            f.flush()
+            os.fsync(f.fileno()) if hasattr(os, 'fsync') else None
+
+        os.replace(tmp_path, SETTINGS_FILE)
+        logger.info("Settings saved successfully (atomic)")
         return True
     except Exception as e:
         logger.error(f"Error saving settings: {e}")
+        try:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+        except Exception:
+            pass
         return False
 
 def get_setting(key, default=None):
@@ -273,14 +335,30 @@ def trigger_settings_reload_and_redisplay():
         logger.error(f"Error in trigger_settings_reload_and_redisplay: {e}")
         return False
 
-def display_file_on_eink(filename):
+def display_file_on_eink(filename, mode='manual'):
     """Display a specific file on the e-ink display"""
     try:
-        # Save the selected image setting
+        # Save the selected image setting and display mode
         settings = load_settings()
+        old_selected = settings.get('selected_image')
         settings['selected_image'] = filename
+        settings['display_mode'] = mode
+
+        # Set live mode start time if entering live mode
+        if mode == 'live':
+            settings['live_mode_start_time'] = time.time()
+
         save_success = save_settings(settings)
-        logger.info(f"Saved selected_image setting for {filename}: {save_success}")
+        logger.info(f"display_file_on_eink: Updated selected_image from '{old_selected}' to '{filename}' (mode: {mode}): save_success={save_success}")
+
+        # Verify the save worked
+        if save_success:
+            verification_settings = load_settings()
+            verification_selected = verification_settings.get('selected_image')
+            if verification_selected != filename:
+                logger.error(f"display_file_on_eink VERIFICATION FAILED: Expected '{filename}', got '{verification_selected}'")
+            else:
+                logger.info(f"display_file_on_eink: Verified selected_image correctly saved as '{filename}'")
 
         # Small delay to ensure settings file is written
         time.sleep(0.1)
@@ -290,17 +368,182 @@ def display_file_on_eink(filename):
         command_data = {
             'action': 'display_file',
             'filename': filename,
+            'mode': mode,
             'timestamp': time.time()
         }
 
         with open(command_file, 'w') as f:
             json.dump(command_data, f)
 
-        logger.info(f"Sent display command for: {filename}")
+        logger.info(f"Sent display command for: {filename} (mode: {mode})")
         return True
 
     except Exception as e:
         logger.error(f"Failed to send display command for {filename}: {e}")
+        return False
+
+def get_playlist_files():
+    """Get list of image files suitable for playlist"""
+    try:
+        folder = Path(UPLOAD_FOLDER)
+        files = [f for f in folder.glob('*') if f.is_file() and not f.name.startswith('.')]
+
+        # Filter to only image files
+        image_files = []
+        for file in files:
+            if file.suffix.lower().lstrip('.') in IMAGE_EXTENSIONS:
+                image_files.append({
+                    'filename': file.name,
+                    'size': file.stat().st_size,
+                    'modified': file.stat().st_mtime
+                })
+
+        # Sort by modification time (latest first)
+        image_files.sort(key=lambda f: f['modified'], reverse=True)
+        return image_files
+
+    except Exception as e:
+        logger.error(f"Error getting playlist files: {e}")
+        return []
+
+def advance_playlist():
+    """Advance to next item in playlist and display it"""
+    try:
+        settings = load_settings()
+
+        if not settings.get('playlist_enabled', False):
+            return False
+
+        # Get current playlist
+        current_playlist_name = settings.get('playlist_current_name', 'default')
+        playlists = settings.get('playlists', {})
+
+        if current_playlist_name not in playlists:
+            logger.warning(f"Current playlist '{current_playlist_name}' not found")
+            return False
+
+        current_playlist = playlists[current_playlist_name]
+        playlist_files = current_playlist.get('files', [])
+
+        if not playlist_files:
+            logger.warning(f"Playlist '{current_playlist_name}' is enabled but has no files")
+            return False
+
+        # Verify files still exist
+        existing_files = []
+        folder = Path(UPLOAD_FOLDER)
+        for filename in playlist_files:
+            if (folder / filename).exists():
+                existing_files.append(filename)
+
+        if not existing_files:
+            logger.warning(f"No files in playlist '{current_playlist_name}' exist anymore")
+            return False
+
+        # Update playlist if files were removed
+        if len(existing_files) != len(playlist_files):
+            current_playlist['files'] = existing_files
+            settings['playlists'][current_playlist_name] = current_playlist
+            logger.info(f"Updated playlist '{current_playlist_name}', removed {len(playlist_files) - len(existing_files)} missing files")
+
+        # Get current index and advance
+        current_index = current_playlist.get('current_index', 0)
+        randomize = current_playlist.get('randomize', False)
+
+        if randomize:
+            # Random selection - pick any file except the current one (if there are multiple files)
+            if len(existing_files) > 1:
+                available_indices = [i for i in range(len(existing_files)) if i != current_index]
+                current_index = random.choice(available_indices)
+            else:
+                current_index = 0
+        else:
+            # Sequential selection - advance to next file
+            current_index = (current_index + 1) % len(existing_files)
+
+        filename = existing_files[current_index]
+
+        # Display the file
+        success = display_file_on_eink(filename, mode='playlist')
+
+        if success:
+            # Reload settings to get the updated display_mode from display_file_on_eink
+            settings = load_settings()
+            playlists = settings.get('playlists', {})
+            current_playlist = playlists.get(current_playlist_name, {})
+
+            # Update playlist with current index and timestamp
+            # current_index should always point to the currently displayed file
+            current_playlist['current_index'] = current_index
+            current_playlist['last_change'] = time.time()
+            settings['playlists'][current_playlist_name] = current_playlist
+            playlist_save_success = save_settings(settings)
+
+            mode_text = "random" if randomize else "sequential"
+            logger.info(f"Playlist '{current_playlist_name}' advanced to: {filename} (index {current_index}, {mode_text} mode)")
+            logger.info(f"Playlist settings save result: {playlist_save_success}")
+
+            # Verify that selected_image was updated correctly
+            verification_settings = load_settings()
+            verification_selected = verification_settings.get('selected_image')
+            if verification_selected != filename:
+                logger.error(f"SYNC ERROR: Expected selected_image='{filename}', but got '{verification_selected}' after save!")
+            else:
+                logger.info(f"Verified: selected_image correctly set to '{filename}'")
+
+            return True
+        else:
+            logger.error(f"Failed to display playlist file: {filename}")
+            return False
+
+    except Exception as e:
+        logger.error(f"Error advancing playlist: {e}")
+        return False
+
+def check_playlist_timer():
+    """Check if it's time to advance the playlist or timeout from live mode"""
+    try:
+        settings = load_settings()
+
+        if not settings.get('playlist_enabled', False):
+            return False
+
+        # Check if we should timeout from live mode back to playlist
+        if settings.get('display_mode') == 'live':
+            live_timeout_minutes = settings.get('live_mode_timeout_minutes', 30)
+            live_start_time = settings.get('live_mode_start_time', 0)
+
+            # If timeout is disabled (0), stay in live mode
+            if live_timeout_minutes == 0:
+                return False
+
+            # Check if live mode has timed out
+            if time.time() - live_start_time >= (live_timeout_minutes * 60):
+                logger.info(f"Live mode timed out after {live_timeout_minutes} minutes, returning to playlist")
+                # Force advance playlist to resume playlist mode
+                return advance_playlist()
+            else:
+                return False
+
+        # Get current playlist for timing check
+        current_playlist_name = settings.get('playlist_current_name', 'default')
+        playlists = settings.get('playlists', {})
+
+        if current_playlist_name not in playlists:
+            return False
+
+        current_playlist = playlists[current_playlist_name]
+        interval_minutes = settings.get('playlist_interval_minutes', 5)
+        last_change = current_playlist.get('last_change', 0)
+
+        # Check if enough time has passed for playlist advance
+        if time.time() - last_change >= (interval_minutes * 60):
+            return advance_playlist()
+
+        return False
+
+    except Exception as e:
+        logger.error(f"Error checking playlist timer: {e}")
         return False
 
 @app.route('/upload', methods=['POST', 'PUT'])
@@ -360,7 +603,7 @@ def upload_file():
                 settings = load_settings()
                 if settings.get('auto_display_upload', True):
                     logger.info(f"Auto-display enabled, displaying uploaded file: {filename}")
-                    result = display_file_on_eink(filename)
+                    result = display_file_on_eink(filename, mode='live')
                     logger.info(f"Auto-display result for {filename}: {result}")
                 else:
                     logger.info(f"Auto-display disabled, not displaying uploaded file: {filename}")
@@ -408,7 +651,7 @@ def upload_file():
                     settings = load_settings()
                     if settings.get('auto_display_upload', True):
                         logger.info(f"Auto-display enabled, displaying uploaded file: {filename}")
-                        success = display_file_on_eink(filename)
+                        success = display_file_on_eink(filename, mode='live')
                         logger.info(f"Auto-display result for {filename}: {success}")
                     else:
                         logger.info(f"Auto-display disabled, not displaying uploaded file: {filename}")
@@ -535,7 +778,7 @@ def upload_file():
             settings = load_settings()
             if settings.get('auto_display_upload', True):
                 logger.info(f"Auto-display enabled, displaying uploaded file: {filename}")
-                success = display_file_on_eink(filename)
+                success = display_file_on_eink(filename, mode='live')
                 logger.info(f"Auto-display result for {filename}: {success}")
             else:
                 logger.info(f"Auto-display disabled, not displaying uploaded file: {filename}")
@@ -581,7 +824,7 @@ def upload_text():
         settings = load_settings()
         if settings.get('auto_display_upload', True):
             logger.info(f"Auto-display enabled, displaying uploaded text file: {filename}")
-            success = display_file_on_eink(filename)
+            success = display_file_on_eink(filename, mode='live')
             logger.info(f"Auto-display result for {filename}: {success}")
         else:
             logger.info(f"Auto-display disabled, not displaying uploaded text file: {filename}")
@@ -790,6 +1033,72 @@ def cleanup_old_files():
         logger.error(f"Cleanup error: {e}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/debug/playlist_state', methods=['GET'])
+def debug_playlist_state():
+    """Debug endpoint to check playlist state"""
+    try:
+        settings = load_settings()
+        return jsonify({
+            'selected_image': settings.get('selected_image'),
+            'display_mode': settings.get('display_mode'),
+            'playlist_enabled': settings.get('playlist_enabled'),
+            'current_playlist_name': settings.get('playlist_current_name'),
+            'playlists': settings.get('playlists', {}),
+            'timestamp': time.time()
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/debug/force_sync', methods=['POST'])
+@login_required
+def force_playlist_sync():
+    """Force sync the displayed file with current playlist"""
+    try:
+        settings = load_settings()
+        display_mode = settings.get('display_mode', 'manual')
+        playlist_enabled = settings.get('playlist_enabled', False)
+
+        # If playlist is enabled but display_mode is wrong, fix it
+        if playlist_enabled and display_mode != 'playlist':
+            logger.warning(f"Force sync: Fixing display_mode from '{display_mode}' to 'playlist'")
+            settings['display_mode'] = 'playlist'
+            display_mode = 'playlist'
+
+        if display_mode == 'playlist' and playlist_enabled:
+            current_playlist_name = settings.get('playlist_current_name', 'default')
+            playlists = settings.get('playlists', {})
+
+            if current_playlist_name in playlists:
+                current_playlist = playlists[current_playlist_name]
+                playlist_files = current_playlist.get('files', [])
+                current_index = current_playlist.get('current_index', 0)
+
+                if playlist_files and current_index < len(playlist_files):
+                    expected_file = playlist_files[current_index]
+
+                    # Force update selected_image
+                    old_selected = settings.get('selected_image')
+                    settings['selected_image'] = expected_file
+                    save_success = save_settings(settings)
+
+                    return jsonify({
+                        'message': 'Force sync completed',
+                        'old_selected_image': old_selected,
+                        'new_selected_image': expected_file,
+                        'save_success': save_success,
+                        'current_index': current_index,
+                        'playlist_files': playlist_files
+                    }), 200
+                else:
+                    return jsonify({'error': 'No valid playlist files'}), 400
+            else:
+                return jsonify({'error': f'Playlist {current_playlist_name} not found'}), 404
+        else:
+            return jsonify({'error': 'Not in playlist mode'}), 400
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/displayed_file', methods=['GET'])
 def get_displayed_file():
     """Get information about the currently displayed file"""
@@ -797,8 +1106,57 @@ def get_displayed_file():
         # Read settings to get the selected image (priority system)
         settings = load_settings()
         selected_image = settings.get('selected_image')
+        display_mode = settings.get('display_mode', 'manual')
 
-        logger.info(f"Displayed file check - selected_image: {selected_image}")
+        logger.info(f"Displayed file check - selected_image: {selected_image}, display_mode: {display_mode}")
+
+        # If playlist is enabled and we're in manual mode, prefer playlist.
+        # Do NOT override 'live' here; live mode should persist until timeout.
+        playlist_enabled = settings.get('playlist_enabled', False)
+        if playlist_enabled and display_mode == 'manual':
+            logger.warning(f"Playlist enabled and display_mode is 'manual'. Switching to 'playlist'.")
+            settings['display_mode'] = 'playlist'
+            display_mode = 'playlist'
+            save_settings(settings)
+
+        # In playlist mode, ALWAYS use the current playlist file as the source of truth
+        if display_mode == 'playlist' and playlist_enabled:
+            current_playlist_name = settings.get('playlist_current_name', 'default')
+            playlists = settings.get('playlists', {})
+
+            if current_playlist_name in playlists:
+                current_playlist = playlists[current_playlist_name]
+                playlist_files = current_playlist.get('files', [])
+                current_index = current_playlist.get('current_index', 0)
+
+                if playlist_files and current_index < len(playlist_files):
+                    expected_file = playlist_files[current_index]
+
+                    # In playlist mode, always return the playlist file as the currently displayed file
+                    if selected_image != expected_file:
+                        logger.warning(f"Playlist mode override: selected_image was '{selected_image}', but playlist shows '{expected_file}' at index {current_index}. Using playlist file.")
+
+                        # Update the selected_image setting to keep it in sync for future calls
+                        settings['selected_image'] = expected_file
+                        save_settings(settings)
+                    else:
+                        logger.info(f"Playlist mode: selected_image matches playlist file: {expected_file}")
+
+                    # Always use the playlist file in playlist mode
+                    selected_image = expected_file
+                    logger.info(f"Playlist mode: returning current playlist file: {expected_file} (index {current_index})")
+                else:
+                    logger.warning(f"Playlist mode: No valid files in playlist or invalid index. current_index={current_index}, files_length={len(playlist_files)}")
+
+        # If we're in override (live) with no selected image (cleared), report none
+        if display_mode == 'live' and not selected_image:
+            logger.info("Override active with no selected image (cleared). Returning none.")
+            return jsonify({
+                'filename': None,
+                'type': 'none',
+                'exists': False,
+                'display_mode': display_mode
+            })
 
         if selected_image:
             file_path = Path(UPLOAD_FOLDER) / selected_image
@@ -807,7 +1165,8 @@ def get_displayed_file():
                 return jsonify({
                     'filename': selected_image,
                     'type': 'selected_image',
-                    'exists': True
+                    'exists': True,
+                    'display_mode': display_mode
                 })
             else:
                 logger.warning(f"Selected image file does not exist: {selected_image}")
@@ -821,14 +1180,16 @@ def get_displayed_file():
             return jsonify({
                 'filename': latest_file,
                 'type': 'latest_file',
-                'exists': True
+                'exists': True,
+                'display_mode': display_mode
             })
 
         logger.info("No files found, returning null")
         return jsonify({
             'filename': None,
             'type': 'none',
-            'exists': False
+            'exists': False,
+            'display_mode': display_mode
         })
 
     except Exception as e:
@@ -838,8 +1199,15 @@ def get_displayed_file():
 @app.route('/clear_screen', methods=['POST'])
 @login_required
 def clear_screen():
-    """Clear the e-ink display screen (without removing files)"""
+    """Clear the e-ink display and enter override with timeout."""
     try:
+        # Enter override-blank: set live mode and clear selected image
+        settings = load_settings()
+        settings['display_mode'] = 'live'
+        settings['live_mode_start_time'] = time.time()
+        settings['selected_image'] = None
+        save_settings(settings)
+
         # Send clear command to the main display handler instead of direct EPD access
         command_file = Path(COMMANDS_DIR) / 'clear_display.json'
         command_data = {
@@ -850,13 +1218,8 @@ def clear_screen():
         with open(command_file, 'w') as f:
             json.dump(command_data, f)
 
-        # Wait a moment for the command to be processed
-        time.sleep(1)
-
-        logger.info("E-ink display screen cleared")
-        return jsonify({
-            'message': 'E-ink display screen cleared successfully'
-        }), 200
+        logger.info("Display cleared and override-blank engaged")
+        return jsonify({'message': 'Display cleared; override active'}), 200
 
     except Exception as e:
         logger.error(f"Clear screen error: {e}")
@@ -874,7 +1237,9 @@ def display_file():
             return jsonify({'error': 'Filename not provided'}), 400
 
         filename = data['filename']
-        success = display_file_on_eink(filename)
+        # Treat manual display as LIVE to pause playlist until timeout
+        # Tag the live source as 'manual' so UI can show correct text
+        success = display_file_on_eink(filename, mode='live')
 
         if success:
             return jsonify({
@@ -1055,6 +1420,403 @@ def get_display_info():
         logger.error(f"Error getting display info: {e}")
         return jsonify({'error': str(e)}), 500
 
+# ============ PLAYLIST API ROUTES ============
+
+@app.route('/api/playlist', methods=['GET'])
+@login_required
+def get_playlist():
+    """Get current playlist configuration and status"""
+    try:
+        settings = load_settings()
+        available_files = get_playlist_files()
+
+        # Get current playlist info
+        current_playlist_name = settings.get('playlist_current_name', 'default')
+        playlists = settings.get('playlists', {})
+        current_playlist = playlists.get(current_playlist_name, {})
+
+        # Calculate timing information
+        timing_info = {}
+        if settings.get('playlist_enabled', False) and current_playlist.get('files'):
+            last_change = current_playlist.get('last_change', 0)
+            interval_minutes = settings.get('playlist_interval_minutes', 5)
+
+            if last_change > 0:
+                elapsed_seconds = time.time() - last_change
+                remaining_seconds = max(0, (interval_minutes * 60) - elapsed_seconds)
+                timing_info = {
+                    'last_change_timestamp': last_change,
+                    'elapsed_seconds': elapsed_seconds,
+                    'remaining_seconds': remaining_seconds,
+                    'next_change_in_minutes': max(0, remaining_seconds / 60)
+                }
+
+        return jsonify({
+            'enabled': settings.get('playlist_enabled', False),
+            'interval_minutes': settings.get('playlist_interval_minutes', 5),
+            'current_playlist_name': current_playlist_name,
+            'playlists': playlists,
+            'files': current_playlist.get('files', []),
+            'current_index': current_playlist.get('current_index', 0),
+            'last_change': current_playlist.get('last_change', 0),
+            'display_mode': settings.get('display_mode', 'manual'),
+            'live_mode_timeout_minutes': settings.get('live_mode_timeout_minutes', 30),
+            'live_mode_start_time': settings.get('live_mode_start_time', 0),
+            'available_files': available_files,
+            'timing_info': timing_info
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error getting playlist: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/playlist', methods=['POST'])
+@login_required
+def update_playlist():
+    """Update playlist configuration"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        settings = load_settings()
+
+        # Update global playlist settings
+        if 'enabled' in data:
+            settings['playlist_enabled'] = bool(data['enabled'])
+
+        if 'interval_minutes' in data:
+            interval = int(data['interval_minutes'])
+            if interval < 1:
+                return jsonify({'error': 'Interval must be at least 1 minute'}), 400
+            settings['playlist_interval_minutes'] = interval
+
+        if 'live_mode_timeout_minutes' in data:
+            timeout = int(data['live_mode_timeout_minutes'])
+            if timeout < 0:
+                return jsonify({'error': 'Live mode timeout must be 0 or greater (0 = no timeout)'}), 400
+            settings['live_mode_timeout_minutes'] = timeout
+
+        if 'current_playlist_name' in data:
+            playlist_name = data['current_playlist_name']
+            playlists = settings.get('playlists', {})
+            if playlist_name in playlists:
+                settings['playlist_current_name'] = playlist_name
+            else:
+                return jsonify({'error': f'Playlist "{playlist_name}" does not exist'}), 400
+
+        # Update specific playlist files and settings
+        if 'files' in data or 'randomize' in data:
+            current_playlist_name = data.get('playlist_name', settings.get('playlist_current_name', 'default'))
+            playlists = settings.get('playlists', {})
+
+            # Update the specific playlist
+            if current_playlist_name not in playlists:
+                playlists[current_playlist_name] = {
+                    'name': current_playlist_name.title() + ' Playlist',
+                    'files': [],
+                    'current_index': 0,
+                    'last_change': 0,
+                    'randomize': False
+                }
+
+            # Update files if provided
+            if 'files' in data:
+                # Validate that all files exist
+                folder = Path(UPLOAD_FOLDER)
+                valid_files = []
+                for filename in data['files']:
+                    if (folder / filename).exists():
+                        valid_files.append(filename)
+                    else:
+                        logger.warning(f"Playlist file does not exist: {filename}")
+
+                playlists[current_playlist_name]['files'] = valid_files
+                playlists[current_playlist_name]['current_index'] = 0  # Reset to start
+
+            # Update randomize setting if provided
+            if 'randomize' in data:
+                playlists[current_playlist_name]['randomize'] = bool(data['randomize'])
+                # Reset index when changing randomize mode
+                playlists[current_playlist_name]['current_index'] = 0
+
+            settings['playlists'] = playlists
+
+        # Save settings
+        if save_settings(settings):
+            current_playlist_name = settings.get('playlist_current_name', 'default')
+            current_playlist = settings.get('playlists', {}).get(current_playlist_name, {})
+
+            logger.info(f"Playlist settings updated: enabled={settings.get('playlist_enabled')}, current='{current_playlist_name}', files={len(current_playlist.get('files', []))}")
+
+            # If playlist was enabled and has files, start it
+            if settings.get('playlist_enabled') and current_playlist.get('files'):
+                advance_playlist()
+
+            return jsonify({
+                'message': 'Playlist updated successfully',
+                'playlist': {
+                    'enabled': settings.get('playlist_enabled', False),
+                    'interval_minutes': settings.get('playlist_interval_minutes', 5),
+                    'current_playlist_name': current_playlist_name,
+                    'files': current_playlist.get('files', []),
+                    'current_index': current_playlist.get('current_index', 0),
+                    'live_mode_timeout_minutes': settings.get('live_mode_timeout_minutes', 30)
+                }
+            }), 200
+        else:
+            return jsonify({'error': 'Failed to save playlist settings'}), 500
+
+    except Exception as e:
+        logger.error(f"Error updating playlist: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/playlist/advance', methods=['POST'])
+@login_required
+def advance_playlist_manual():
+    """Manually advance to next playlist item"""
+    try:
+        success = advance_playlist()
+        if success:
+            return jsonify({'message': 'Playlist advanced successfully'}), 200
+        else:
+            return jsonify({'error': 'Failed to advance playlist'}), 500
+
+    except Exception as e:
+        logger.error(f"Error manually advancing playlist: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/playlist/resume', methods=['POST'])
+@login_required
+def resume_playlist():
+    """Resume playlist immediately from live/manual override.
+    Sets display_mode to 'playlist' and displays the current playlist item.
+    """
+    try:
+        settings = load_settings()
+        settings['display_mode'] = 'playlist'
+
+        current_playlist_name = settings.get('playlist_current_name', 'default')
+        playlists = settings.get('playlists', {})
+
+        if current_playlist_name not in playlists:
+            return jsonify({'error': f"Playlist '{current_playlist_name}' not found"}), 404
+
+        current_playlist = playlists[current_playlist_name]
+        files = current_playlist.get('files', [])
+        if not files:
+            return jsonify({'error': 'Current playlist has no files'}), 400
+
+        index = current_playlist.get('current_index', 0)
+        if index >= len(files):
+            index = 0
+        filename = files[index]
+
+        # Display current item and reset live start/timeout context
+        success = display_file_on_eink(filename, mode='playlist')
+        if not success:
+            return jsonify({'error': 'Failed to display playlist item'}), 500
+
+        # Mark last_change now to restart interval timer
+        settings = load_settings()
+        settings['display_mode'] = 'playlist'
+        playlists = settings.get('playlists', {})
+        current_playlist = playlists.get(current_playlist_name, {})
+        current_playlist['last_change'] = time.time()
+        settings['playlists'][current_playlist_name] = current_playlist
+        # Clear live source when resuming playlist
+        # remove any legacy live_source
+        settings.pop('live_source', None)
+        save_settings(settings)
+
+        return jsonify({'message': 'Playlist resumed', 'filename': filename}), 200
+
+    except Exception as e:
+        logger.error(f"Error resuming playlist: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/playlist/check', methods=['POST'])
+def check_playlist():
+    """Check and advance playlist if needed (internal endpoint)"""
+    try:
+        advanced = check_playlist_timer()
+        return jsonify({'advanced': advanced}), 200
+
+    except Exception as e:
+        logger.error(f"Error checking playlist: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/playlist/create', methods=['POST'])
+@login_required
+def create_playlist():
+    """Create a new playlist"""
+    try:
+        data = request.get_json()
+        if not data or 'name' not in data:
+            return jsonify({'error': 'Playlist name is required'}), 400
+
+        playlist_name = data['name'].strip()
+        if not playlist_name:
+            return jsonify({'error': 'Playlist name cannot be empty'}), 400
+
+        settings = load_settings()
+        playlists = settings.get('playlists', {})
+
+        if playlist_name in playlists:
+            return jsonify({'error': f'Playlist "{playlist_name}" already exists'}), 400
+
+        # Create new playlist
+        playlists[playlist_name] = {
+            'name': data.get('display_name', playlist_name.title() + ' Playlist'),
+            'files': data.get('files', []),
+            'current_index': 0,
+            'last_change': 0,
+            'randomize': data.get('randomize', False)
+        }
+
+        settings['playlists'] = playlists
+
+        if save_settings(settings):
+            logger.info(f"Created new playlist: {playlist_name}")
+            return jsonify({
+                'message': f'Playlist "{playlist_name}" created successfully',
+                'playlist': playlists[playlist_name]
+            }), 200
+        else:
+            return jsonify({'error': 'Failed to save playlist'}), 500
+
+    except Exception as e:
+        logger.error(f"Error creating playlist: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/playlist/delete', methods=['POST'])
+@login_required
+def delete_playlist():
+    """Delete a playlist"""
+    try:
+        data = request.get_json()
+        if not data or 'name' not in data:
+            return jsonify({'error': 'Playlist name is required'}), 400
+
+        playlist_name = data['name']
+        settings = load_settings()
+        playlists = settings.get('playlists', {})
+
+        if playlist_name not in playlists:
+            return jsonify({'error': f'Playlist "{playlist_name}" does not exist'}), 404
+
+        if playlist_name == 'default':
+            return jsonify({'error': 'Cannot delete the default playlist'}), 400
+
+        # Remove the playlist
+        del playlists[playlist_name]
+        settings['playlists'] = playlists
+
+        # If this was the current playlist, switch to default
+        if settings.get('playlist_current_name') == playlist_name:
+            settings['playlist_current_name'] = 'default'
+
+        if save_settings(settings):
+            logger.info(f"Deleted playlist: {playlist_name}")
+            return jsonify({
+                'message': f'Playlist "{playlist_name}" deleted successfully'
+            }), 200
+        else:
+            return jsonify({'error': 'Failed to save changes'}), 500
+
+    except Exception as e:
+        logger.error(f"Error deleting playlist: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/playlist/switch', methods=['POST'])
+@login_required
+def switch_playlist():
+    """Switch to a different playlist"""
+    try:
+        data = request.get_json()
+        if not data or 'name' not in data:
+            return jsonify({'error': 'Playlist name is required'}), 400
+
+        playlist_name = data['name']
+        settings = load_settings()
+        playlists = settings.get('playlists', {})
+
+        if playlist_name not in playlists:
+            return jsonify({'error': f'Playlist "{playlist_name}" does not exist'}), 404
+
+        settings['playlist_current_name'] = playlist_name
+
+        if save_settings(settings):
+            logger.info(f"Switched to playlist: {playlist_name}")
+
+            # If playlist is enabled and has files, start displaying it
+            if settings.get('playlist_enabled') and playlists[playlist_name].get('files'):
+                advance_playlist()
+
+            return jsonify({
+                'message': f'Switched to playlist "{playlist_name}"',
+                'current_playlist': playlists[playlist_name]
+            }), 200
+        else:
+            return jsonify({'error': 'Failed to switch playlist'}), 500
+
+    except Exception as e:
+        logger.error(f"Error switching playlist: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/playlist/rename', methods=['POST'])
+@login_required
+def rename_playlist():
+    """Rename a playlist"""
+    try:
+        data = request.get_json()
+        if not data or 'old_name' not in data or 'new_name' not in data:
+            return jsonify({'error': 'Both old_name and new_name are required'}), 400
+
+        old_name = data['old_name']
+        new_name = data['new_name'].strip()
+        display_name = data.get('display_name', new_name.title() + ' Playlist')
+
+        if not new_name:
+            return jsonify({'error': 'New name cannot be empty'}), 400
+
+        if old_name == 'default':
+            return jsonify({'error': 'Cannot rename the default playlist'}), 400
+
+        settings = load_settings()
+        playlists = settings.get('playlists', {})
+
+        if old_name not in playlists:
+            return jsonify({'error': f'Playlist "{old_name}" does not exist'}), 404
+
+        if new_name in playlists and new_name != old_name:
+            return jsonify({'error': f'Playlist "{new_name}" already exists'}), 400
+
+        # Rename the playlist
+        playlist_data = playlists[old_name].copy()
+        playlist_data['name'] = display_name
+
+        playlists[new_name] = playlist_data
+        del playlists[old_name]
+        settings['playlists'] = playlists
+
+        # Update current playlist name if this was the current one
+        if settings.get('playlist_current_name') == old_name:
+            settings['playlist_current_name'] = new_name
+
+        if save_settings(settings):
+            logger.info(f"Renamed playlist from '{old_name}' to '{new_name}'")
+            return jsonify({
+                'message': f'Playlist renamed from "{old_name}" to "{new_name}" successfully',
+                'playlist': playlists[new_name]
+            }), 200
+        else:
+            return jsonify({'error': 'Failed to save changes'}), 500
+
+    except Exception as e:
+        logger.error(f"Error renaming playlist: {e}")
+        return jsonify({'error': str(e)}), 500
+
 # ============ AUTHENTICATION ROUTES ============
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -1136,11 +1898,38 @@ def api_list_files():
         logger.error(f"Enhanced list files error: {e}")
         return jsonify({'error': str(e)}), 500
 
+# Background task for playlist management
+import threading
+
+def playlist_background_task():
+    """Background task to check playlist timer periodically"""
+    consecutive_errors = 0
+    while True:
+        try:
+            check_playlist_timer()
+            consecutive_errors = 0  # Reset error count on success
+            time.sleep(15)  # Check every 15 seconds for good balance
+        except Exception as e:
+            consecutive_errors += 1
+            logger.error(f"Playlist background task error #{consecutive_errors}: {e}")
+
+            # If too many consecutive errors, wait longer to prevent spam
+            if consecutive_errors > 5:
+                logger.warning(f"Too many playlist errors ({consecutive_errors}), sleeping for 2 minutes")
+                time.sleep(120)  # Sleep 2 minutes after many errors
+            else:
+                time.sleep(60)  # Wait longer on error
+
 if __name__ == '__main__':
     ensure_upload_folder()
     logger.info(f"Starting upload server...")
     logger.info(f"Upload folder: {UPLOAD_FOLDER}")
     logger.info(f"Allowed extensions: {ALLOWED_EXTENSIONS}")
+
+    # Start background playlist task
+    playlist_thread = threading.Thread(target=playlist_background_task, daemon=True)
+    playlist_thread.start()
+    logger.info("Started playlist background task")
 
     # Get host and port from environment or use defaults
     # In production with Cloudflare tunnel, bind to localhost only for security

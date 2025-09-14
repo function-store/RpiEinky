@@ -51,6 +51,8 @@ Tested with [Raspberryi Pi Zero](https://www.raspberrypi.com/products/raspberry-
 - **File Management** - Delete individual files or multiple files at once
 - **Responsive Design** - Works on desktop, tablet, and mobile devices
 - **Network Access** - Access from any device on your local network (TODO remote network)
+ - **Playlists** - Multiple playlists, reorder items, randomize, and pick active playlist from the main UI
+ - **Override** - Manual display or Clear acts as an override that pauses the playlist until timeout or until you press Start Playlist
 
 ### Display Capabilities
 - **Multiple File Types** - Images (JPG, PNG, BMP), text files, PDFs, and more
@@ -58,6 +60,7 @@ Tested with [Raspberryi Pi Zero](https://www.raspberrypi.com/products/raspberry-
 - **Text Rendering** - Text files display with proper word wrapping
 - **PDF Support** - First page of PDFs rendered as images
 - **Orientation Handling** - Automatic portrait/landscape adjustment
+ - **Cleared display override** - Clearing enters an override-blank; playlist auto-resumes after timeout
 
 ### TouchDesigner Integration
 - **Direct Upload** - Send images directly from TouchDesigner

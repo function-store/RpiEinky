@@ -29,10 +29,6 @@
                         <span id="display-resolution">Loading...</span>
                     </div>
                 </div>
-                <div class="polling-indicator" id="polling-indicator" style="display: none;">
-                    <i class="fas fa-sync-alt fa-spin"></i>
-                    <span>Checking for updates...</span>
-                </div>
             </div>
         </header>
 
@@ -73,12 +69,42 @@
                     <i class="fas fa-cog"></i>
                     Settings
                 </button>
+                <button class="control-btn playlist-btn" id="open-playlist">
+                    <i class="fas fa-list"></i>
+                    Playlist
+                </button>
+                <button class="control-btn playlist-toggle-btn" id="playlist-toggle" data-enabled="false">
+                    <i class="fas fa-play"></i>
+                    <span class="toggle-text">Start Playlist</span>
+                </button>
                 <button class="control-btn select-btn" id="select-multiple" style="display: none;">
                     <i class="fas fa-check-square"></i>
                     Select Multiple
                 </button>
             </div>
-                </section>
+        </section>
+
+        <!-- Playlist Status Section -->
+        <section class="playlist-status-section" id="playlist-status-section" style="display: none;">
+            <div class="section-header">
+                <h2><i class="fas fa-list"></i> Playlist Status</h2>
+                <div class="playlist-controls">
+                    <div class="playlist-selector-main">
+                        <label for="main-playlist-selector">Active Playlist:</label>
+                        <select id="main-playlist-selector" class="playlist-dropdown">
+                            <option value="default">Default Playlist</option>
+                        </select>
+                    </div>
+                    <button class="control-btn" id="playlist-advance">
+                        <i class="fas fa-step-forward"></i>
+                        Next
+                    </button>
+                </div>
+            </div>
+            <div class="playlist-status-info" id="playlist-status-info">
+                <!-- Playlist status will be shown here -->
+            </div>
+        </section>
 
         <!-- Currently Displayed Image Section -->
         <section class="currently-displayed-section" id="currently-displayed-section" style="display: none;">
@@ -146,6 +172,126 @@
             <div class="modal-footer">
                 <button class="btn secondary" id="modal-cancel">Cancel</button>
                 <button class="btn primary" id="modal-confirm">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Playlist Modal -->
+    <div class="modal-overlay" id="playlist-modal" style="display: none;">
+        <div class="modal large-modal">
+            <div class="modal-header">
+                <h3><i class="fas fa-list"></i> Playlist Manager</h3>
+            </div>
+            <div class="modal-body">
+                <!-- Playlist Settings -->
+                <div class="settings-section">
+                    <h4><i class="fas fa-play-circle"></i> Playlist Settings</h4>
+                    <div class="setting-group">
+                        <label for="playlist-enabled">Enable Playlist:</label>
+                        <input type="checkbox" id="playlist-enabled" class="setting-input">
+                        <p class="setting-description">
+                            When enabled, images will cycle automatically based on the interval below
+                        </p>
+                    </div>
+
+                    <div class="setting-group">
+                        <label for="playlist-interval">Interval (minutes):</label>
+                        <input type="number" id="playlist-interval" class="setting-input" min="1" max="1440" step="1">
+                        <p class="setting-description">
+                            Time between image changes (1-1440 minutes)
+                        </p>
+                    </div>
+
+                    <div class="setting-group">
+                        <label for="live-timeout">Live Mode Timeout (minutes):</label>
+                        <input type="number" id="live-timeout" class="setting-input" min="0" max="1440" step="1">
+                        <p class="setting-description">
+                            Minutes to wait before returning to playlist from live mode (0 = no timeout)
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Playlist Management -->
+                <div class="settings-section">
+                    <h4><i class="fas fa-layer-group"></i> Playlist Management</h4>
+                    <div class="playlist-selector">
+                        <div class="setting-group">
+                            <label for="current-playlist">Current Playlist:</label>
+                            <select id="current-playlist" class="setting-input">
+                                <option value="default">Default Playlist</option>
+                            </select>
+                        </div>
+
+                        <div class="playlist-actions-bar">
+                            <button type="button" class="btn secondary small" id="create-playlist-btn">
+                                <i class="fas fa-plus"></i> New
+                            </button>
+                            <button type="button" class="btn secondary small" id="rename-playlist-btn">
+                                <i class="fas fa-edit"></i> Rename
+                            </button>
+                            <button type="button" class="btn danger small" id="delete-playlist-btn">
+                                <i class="fas fa-trash"></i> Delete
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- File Selection -->
+                <div class="settings-section">
+                    <h4><i class="fas fa-images"></i> Playlist Files</h4>
+                    <p class="setting-description">
+                        Select and reorder images for your playlist. Only image files are shown.
+                    </p>
+
+                    <div class="setting-group">
+                        <label for="playlist-randomize">
+                            <input type="checkbox" id="playlist-randomize" class="setting-input">
+                            Randomize Order
+                        </label>
+                        <p class="setting-description">
+                            When enabled, images will be displayed in random order instead of sequential order
+                        </p>
+                    </div>
+
+                    <div class="playlist-files-container">
+                        <div class="available-files">
+                            <h5>Available Images</h5>
+                            <div class="file-list" id="available-files-list">
+                                <!-- Available files will be populated here -->
+                            </div>
+                        </div>
+
+                        <div class="playlist-actions">
+                            <button type="button" class="btn secondary" id="add-to-playlist">
+                                <i class="fas fa-arrow-right"></i> Add
+                            </button>
+                            <button type="button" class="btn secondary" id="remove-from-playlist">
+                                <i class="fas fa-arrow-left"></i> Remove
+                            </button>
+                        </div>
+
+                        <div class="playlist-files">
+                            <h5>Playlist Order</h5>
+                            <div class="file-list sortable" id="playlist-files-list">
+                                <!-- Playlist files will be populated here -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Live Indicator Info -->
+                <div class="settings-section">
+                    <h4><i class="fas fa-broadcast-tower"></i> Display Mode Info</h4>
+                    <div class="display-mode-info">
+                        <p><strong>Manual Mode:</strong> Images are displayed when you click "Display" or upload with auto-display off</p>
+                        <p><strong>Playlist Mode:</strong> Images cycle automatically based on your playlist settings</p>
+                        <p><strong>Live Mode:</strong> TouchDesigner uploads take priority and show a "LIVE" indicator</p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary" id="playlist-cancel">Cancel</button>
+                <button class="btn primary" id="playlist-save">Save Playlist</button>
             </div>
         </div>
     </div>
