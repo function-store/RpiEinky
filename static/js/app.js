@@ -66,7 +66,6 @@ class EinkDisplayManager {
 
         // Control buttons
         document.getElementById('clear-display').addEventListener('click', this.clearDisplay.bind(this));
-        document.getElementById('clean-folder').addEventListener('click', this.cleanFolder.bind(this));
         document.getElementById('refresh-files').addEventListener('click', this.refreshFiles.bind(this));
         document.getElementById('select-multiple').addEventListener('click', this.toggleSelectionMode.bind(this));
 
@@ -85,6 +84,7 @@ class EinkDisplayManager {
         document.getElementById('open-settings').addEventListener('click', this.openSettings.bind(this));
         document.getElementById('settings-cancel').addEventListener('click', this.closeSettings.bind(this));
         document.getElementById('settings-save').addEventListener('click', this.saveSettings.bind(this));
+        document.getElementById('clean-folder-settings').addEventListener('click', this.cleanFolder.bind(this));
         document.getElementById('settings-modal').addEventListener('click', (e) => {
             if (e.target.id === 'settings-modal') this.closeSettings();
         });
@@ -98,6 +98,7 @@ class EinkDisplayManager {
         });
         document.getElementById('playlist-advance').addEventListener('click', this.advancePlaylist.bind(this));
         document.getElementById('playlist-toggle').addEventListener('click', this.togglePlaylist.bind(this));
+        document.getElementById('playlist-stop-override').addEventListener('click', this.stopPlaylistFromOverride.bind(this));
         // debug force-sync removed
 
         // Playlist management events
@@ -1005,12 +1006,20 @@ class EinkDisplayManager {
     updatePlaylistStatus() {
         const section = document.getElementById('playlist-status-section');
         const info = document.getElementById('playlist-status-info');
+        const stopOverrideBtn = document.getElementById('playlist-stop-override');
 
         // Update toggle button state
         this.updatePlaylistToggleButton();
 
         // Update main playlist selector
         this.updateMainPlaylistSelector();
+
+        // Show/hide stop button based on mode
+        if (this.displayMode === 'live' && this.playlistData && this.playlistData.enabled) {
+            stopOverrideBtn.style.display = 'block';
+        } else {
+            stopOverrideBtn.style.display = 'none';
+        }
 
         // debug force-sync button removed
 
@@ -1629,6 +1638,47 @@ class EinkDisplayManager {
         }
     }
 
+    async stopPlaylistFromOverride() {
+        try {
+            if (!this.playlistData) {
+                this.showToast('Please wait for playlist data to load', 'warning');
+                return;
+            }
+
+            // Stop the playlist while staying in override mode
+            const response = await fetch('/api/playlist', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    enabled: false,
+                    interval_minutes: this.playlistData.interval_minutes,
+                    live_mode_timeout_minutes: this.playlistData.live_mode_timeout_minutes,
+                    current_playlist_name: this.playlistData.current_playlist_name,
+                    playlist_name: this.playlistData.current_playlist_name,
+                    files: this.playlistData.playlists[this.playlistData.current_playlist_name]?.files || []
+                })
+            });
+
+            if (response.ok) {
+                this.showToast('Playlist stopped', 'success');
+
+                // Refresh playlist data and UI
+                await this.loadPlaylistData();
+                await this.loadCurrentlyDisplayedFile();
+                this.renderFiles();
+            } else {
+                const error = await response.json();
+                throw new Error(error.error || 'Failed to stop playlist');
+            }
+
+        } catch (error) {
+            console.error('Error stopping playlist from override:', error);
+            this.showToast(`Failed to stop playlist: ${error.message}`, 'error');
+        }
+    }
+
     updatePlaylistToggleButton() {
         const toggleBtn = document.getElementById('playlist-toggle');
         const toggleIcon = toggleBtn.querySelector('i');
@@ -1647,27 +1697,36 @@ class EinkDisplayManager {
         toggleBtn.setAttribute('data-enabled', isEnabled.toString());
         toggleBtn.disabled = false;
 
-        // If live override is active, offer to start playlist
+        // If live override is active, offer both resume and stop options
         if (this.displayMode === 'live') {
-            toggleIcon.className = 'fas fa-play';
-            toggleText.textContent = 'Start Playlist';
-            // When in live, clicking the toggle should resume playlist immediately
-            toggleBtn.onclick = async () => {
-                try {
-                    const resp = await fetch('/api/playlist/resume', { method: 'POST' });
-                    if (resp.ok) {
-                        this.showToast('Playlist resumed', 'success');
-                        await this.loadPlaylistData();
-                        await this.loadCurrentlyDisplayedFile();
-                        this.renderFiles();
-                    } else {
-                        const err = await resp.json();
-                        throw new Error(err.error || 'Failed to resume playlist');
+            if (isEnabled) {
+                // Playlist is running but in override - offer to resume or stop
+                toggleIcon.className = 'fas fa-play';
+                toggleText.textContent = 'Resume Playlist';
+                // When in live, clicking the toggle should resume playlist immediately
+                toggleBtn.onclick = async () => {
+                    try {
+                        const resp = await fetch('/api/playlist/resume', { method: 'POST' });
+                        if (resp.ok) {
+                            this.showToast('Playlist resumed', 'success');
+                            await this.loadPlaylistData();
+                            await this.loadCurrentlyDisplayedFile();
+                            this.renderFiles();
+                        } else {
+                            const err = await resp.json();
+                            throw new Error(err.error || 'Failed to resume playlist');
+                        }
+                    } catch (e) {
+                        this.showToast(`Failed to resume playlist: ${e.message}`, 'error');
                     }
-                } catch (e) {
-                    this.showToast(`Failed to resume playlist: ${e.message}`, 'error');
-                }
-            };
+                };
+            } else {
+                // Playlist is stopped and in override - offer to start
+                toggleIcon.className = 'fas fa-play';
+                toggleText.textContent = 'Start Playlist';
+                // Use the regular toggle playlist function
+                toggleBtn.onclick = null;
+            }
             return;
         }
 
@@ -1731,11 +1790,12 @@ class EinkDisplayManager {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    playlist_enabled: newEnabled,
-                    playlist_interval_minutes: this.playlistData.interval_minutes,
+                    enabled: newEnabled,
+                    interval_minutes: this.playlistData.interval_minutes,
                     live_mode_timeout_minutes: this.playlistData.live_mode_timeout_minutes,
-                    playlist_current_name: this.playlistData.current_playlist_name,
-                    playlist_files: this.playlistData.playlists[this.playlistData.current_playlist_name]?.files || []
+                    current_playlist_name: this.playlistData.current_playlist_name,
+                    playlist_name: this.playlistData.current_playlist_name,
+                    files: this.playlistData.playlists[this.playlistData.current_playlist_name]?.files || []
                 })
             });
 

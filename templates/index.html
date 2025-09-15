@@ -57,10 +57,6 @@
                     <i class="fas fa-eraser"></i>
                     Clear Display
                 </button>
-                <button class="control-btn danger-btn" id="clean-folder">
-                    <i class="fas fa-trash-alt"></i>
-                    Clean Folder
-                </button>
                 <button class="control-btn" id="refresh-files">
                     <i class="fas fa-sync-alt"></i>
                     Refresh Files
@@ -98,6 +94,10 @@
                     <button class="control-btn" id="playlist-advance">
                         <i class="fas fa-step-forward"></i>
                         Next
+                    </button>
+                    <button class="control-btn danger-btn" id="playlist-stop-override" style="display: none;">
+                        <i class="fas fa-stop"></i>
+                        Stop Playlist
                     </button>
                 </div>
             </div>
@@ -285,7 +285,7 @@
                     <div class="display-mode-info">
                         <p><strong>Manual Mode:</strong> Images are displayed when you click "Display" or upload with auto-display off</p>
                         <p><strong>Playlist Mode:</strong> Images cycle automatically based on your playlist settings</p>
-                        <p><strong>Live Mode:</strong> TouchDesigner uploads take priority and show a "LIVE" indicator</p>
+                        <p><strong>Override Mode:</strong> TouchDesigner uploads or manual displays take priority and show an "OVERRIDE" indicator</p>
                     </div>
                 </div>
             </div>
@@ -406,6 +406,21 @@
                         <p class="setting-description">
                             Puts display to sleep between operations for power efficiency and display health.
                             <strong>Recommended</strong> - adds ~0.5-1 second wake time per operation but prevents display damage.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- System Maintenance -->
+                <div class="settings-section">
+                    <h4><i class="fas fa-tools"></i> System Maintenance</h4>
+                    <div class="setting-group">
+                        <label>Clean All Files:</label>
+                        <button class="btn danger" id="clean-folder-settings">
+                            <i class="fas fa-trash-alt"></i>
+                            Clean Folder
+                        </button>
+                        <p class="setting-description">
+                            <strong>Warning:</strong> This will delete all files in the watched folder. This action cannot be undone.
                         </p>
                     </div>
                 </div>
