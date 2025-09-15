@@ -917,6 +917,14 @@ class EinkDisplayHandler(FileSystemEventHandler):
                     self.current_displayed_file = None
                 except Exception as e:
                     logger.error(f"Error clearing display: {e}")
+            elif action == 'show_welcome_screen':
+                # Display welcome screen with auto-revert
+                logger.info("Executing show welcome screen command")
+                try:
+                    self.display_welcome_screen_with_revert(force=True)
+                    logger.info("Welcome screen displayed successfully")
+                except Exception as e:
+                    logger.error(f"Error displaying welcome screen: {e}")
             elif action == 'get_display_info':
                 # Send display info response
                 logger.info("Executing get display info command")
@@ -1242,6 +1250,55 @@ class EinkDisplayHandler(FileSystemEventHandler):
             #self.display_error(file_path.name, str(e))
             return False
 
+    def display_welcome_screen_with_revert(self, force=False, revert_delay=10):
+        """Display welcome screen temporarily, then revert to previous state
+
+        Args:
+            force: If True, bypass the cooldown timer
+            revert_delay: Seconds to show welcome screen before reverting (default: 10)
+        """
+        try:
+            # Save current state before showing welcome screen
+            previous_file = self.current_displayed_file
+            logger.info(f"Saving current state - displayed file: {previous_file}")
+
+            # Show the welcome screen
+            self.display_welcome_screen(force=force)
+
+            # Schedule revert after delay
+            def revert_display():
+                try:
+                    time.sleep(revert_delay)
+                    logger.info(f"Reverting display after {revert_delay} seconds")
+
+                    if previous_file and Path(self.watched_folder / previous_file).exists():
+                        # Restore previous file
+                        logger.info(f"Restoring previous file: {previous_file}")
+                        self.display_file(self.watched_folder / previous_file)
+                        self.current_displayed_file = previous_file
+                    else:
+                        # No previous file or file no longer exists, check for priority file
+                        logger.info("No previous file to restore, checking for priority file")
+                        priority_file = self.get_priority_display_file()
+                        if priority_file:
+                            logger.info(f"Displaying priority file: {priority_file.name}")
+                            self.display_file(priority_file)
+                            self.current_displayed_file = priority_file
+                        else:
+                            # No files available, leave welcome screen or clear display
+                            logger.info("No files available to display after welcome screen")
+
+                except Exception as e:
+                    logger.error(f"Error reverting display after welcome screen: {e}")
+
+            # Start revert timer in a separate thread
+            import threading
+            revert_thread = threading.Thread(target=revert_display, daemon=True)
+            revert_thread.start()
+
+        except Exception as e:
+            logger.error(f"Error in display_welcome_screen_with_revert: {e}")
+
     def display_error(self, filename, error_msg):
         """Display error message on e-ink"""
         try:
@@ -1330,16 +1387,21 @@ class EinkDisplayHandler(FileSystemEventHandler):
             logger.error(f"Error displaying IP address: {e}")
             self.display_error("IP Display", str(e))
 
-    def display_welcome_screen(self):
-        """Display welcome screen with IP address and web interface information"""
+    def display_welcome_screen(self, force=False):
+        """Display welcome screen with IP address and web interface information
+
+        Args:
+            force: If True, bypass the cooldown timer
+        """
         try:
             # Check if we've shown the welcome screen recently (cooldown of 30 seconds)
             current_time = time.time()
-            if current_time - self.last_welcome_screen_time < 30:
-                logger.info("Welcome screen shown recently, skipping to avoid file descriptor issues")
+            if not force and current_time - self.last_welcome_screen_time < 30:
+                logger.info("Welcome screen shown recently, skipping to avoid file descriptor issues (use force=True to override)")
                 return
 
             self.last_welcome_screen_time = current_time
+            logger.info(f"Displaying welcome screen (force={force})")
 
             ip_address = get_ip_address()
             hostname = socket.gethostname()

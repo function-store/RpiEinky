@@ -40,6 +40,7 @@
                     <h3>Drop files here or click to browse</h3>
                     <p>Supports images, text files, and PDFs</p>
                     <input type="file" id="file-input" multiple accept=".jpg,.jpeg,.png,.gif,.bmp,.txt,.md,.py,.js,.html,.css,.pdf,.json,.xml,.csv">
+                    <input type="file" id="camera-input" accept="image/*" capture style="display: none;">
                 </div>
                 <div class="upload-progress" id="upload-progress" style="display: none;">
                     <div class="progress-bar">
@@ -47,6 +48,16 @@
                     </div>
                     <div class="progress-text" id="progress-text">Uploading...</div>
                 </div>
+            </div>
+
+            <!-- Mobile Camera Controls -->
+            <div class="mobile-camera-controls" id="mobile-camera-controls">
+                <button class="control-btn camera-btn" id="take-photo-btn" title="Take Photo">
+                    <i class="fas fa-camera"></i>
+                    Take Photo
+                </button>
+                <!-- Alternative camera input for better Firefox support -->
+                <input type="file" id="camera-input-alt" accept="image/*" capture="user" style="display: none;">
             </div>
         </section>
 
@@ -56,10 +67,6 @@
                 <button class="control-btn clear-btn" id="clear-display">
                     <i class="fas fa-eraser"></i>
                     Clear Display
-                </button>
-                <button class="control-btn" id="refresh-files">
-                    <i class="fas fa-sync-alt"></i>
-                    Refresh Files
                 </button>
                 <button class="control-btn" id="open-settings">
                     <i class="fas fa-cog"></i>
@@ -246,10 +253,10 @@
                     <div class="setting-group">
                         <label for="playlist-randomize">
                             <input type="checkbox" id="playlist-randomize" class="setting-input">
-                            Randomize Order
+                            Shuffle Order
                         </label>
                         <p class="setting-description">
-                            When enabled, images will be displayed in random order instead of sequential order
+                            When enabled, images will be shuffled and displayed in random order. Each image is shown once before any repeats.
                         </p>
                     </div>
 
@@ -414,6 +421,17 @@
                 <div class="settings-section">
                     <h4><i class="fas fa-tools"></i> System Maintenance</h4>
                     <div class="setting-group">
+                        <label>Refresh File List:</label>
+                        <button class="btn secondary" id="refresh-files-settings">
+                            <i class="fas fa-sync-alt"></i>
+                            Refresh Files
+                        </button>
+                        <p class="setting-description">
+                            Reload the file gallery to sync with any files added or removed outside the web interface.
+                        </p>
+                    </div>
+
+                    <div class="setting-group">
                         <label>Clean All Files:</label>
                         <button class="btn danger" id="clean-folder-settings">
                             <i class="fas fa-trash-alt"></i>
@@ -421,6 +439,17 @@
                         </button>
                         <p class="setting-description">
                             <strong>Warning:</strong> This will delete all files in the watched folder. This action cannot be undone.
+                        </p>
+                    </div>
+
+                    <div class="setting-group">
+                        <label>Debug Display:</label>
+                        <button class="btn secondary" id="show-welcome-screen">
+                            <i class="fas fa-tv"></i>
+                            Show Welcome Screen
+                        </button>
+                        <p class="setting-description">
+                            Display the welcome screen with IP address and system information. Useful for debugging network connections.
                         </p>
                     </div>
                 </div>

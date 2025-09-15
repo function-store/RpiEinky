@@ -289,6 +289,12 @@ body {
     border-color: var(--warning-color);
 }
 
+.control-btn.camera-btn {
+    background: var(--success-color);
+    color: white;
+    border-color: var(--success-color);
+}
+
 /* Files Section */
 .files-section {
     margin-bottom: 24px;
@@ -826,6 +832,39 @@ body {
 
 .modal-body::-webkit-scrollbar-thumb:hover {
     background: var(--text-secondary);
+}
+
+/* Mobile Camera Controls */
+.mobile-camera-controls {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin-top: 16px;
+    gap: 12px;
+    width: 100%;
+}
+
+.camera-btn i {
+    font-size: 16px;
+}
+
+/* Show camera controls on mobile/tablet by default */
+.mobile-camera-controls {
+    display: flex;
+}
+
+/* Hide camera controls on desktop only */
+@media (min-width: 1024px) {
+    .mobile-camera-controls {
+        display: none;
+    }
+}
+
+/* Ensure camera controls show on all mobile devices */
+@media (max-width: 1023px) {
+    .mobile-camera-controls {
+        display: flex !important;
+    }
 }
 
 /* Responsive Design */

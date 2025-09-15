@@ -66,8 +66,22 @@ class EinkDisplayManager {
 
         // Control buttons
         document.getElementById('clear-display').addEventListener('click', this.clearDisplay.bind(this));
-        document.getElementById('refresh-files').addEventListener('click', this.refreshFiles.bind(this));
         document.getElementById('select-multiple').addEventListener('click', this.toggleSelectionMode.bind(this));
+
+        // Camera functionality (check if elements exist first)
+        const takePhotoBtn = document.getElementById('take-photo-btn');
+        const cameraInput = document.getElementById('camera-input');
+        const cameraInputAlt = document.getElementById('camera-input-alt');
+
+        if (takePhotoBtn) {
+            takePhotoBtn.addEventListener('click', this.openCamera.bind(this));
+        }
+        if (cameraInput) {
+            cameraInput.addEventListener('change', this.handleCameraCapture.bind(this));
+        }
+        if (cameraInputAlt) {
+            cameraInputAlt.addEventListener('change', this.handleCameraCapture.bind(this));
+        }
 
         // Selection controls
         document.getElementById('delete-selected').addEventListener('click', this.deleteSelected.bind(this));
@@ -85,6 +99,8 @@ class EinkDisplayManager {
         document.getElementById('settings-cancel').addEventListener('click', this.closeSettings.bind(this));
         document.getElementById('settings-save').addEventListener('click', this.saveSettings.bind(this));
         document.getElementById('clean-folder-settings').addEventListener('click', this.cleanFolder.bind(this));
+        document.getElementById('show-welcome-screen').addEventListener('click', this.showWelcomeScreen.bind(this));
+        document.getElementById('refresh-files-settings').addEventListener('click', this.refreshFiles.bind(this));
         document.getElementById('settings-modal').addEventListener('click', (e) => {
             if (e.target.id === 'settings-modal') this.closeSettings();
         });
@@ -1036,16 +1052,20 @@ class EinkDisplayManager {
             const liveTimeoutMinutes = this.playlistData.live_mode_timeout_minutes;
 
             let timeoutInfo = '';
-            if (liveTimeoutMinutes > 0) {
+            // Only show timeout info if playlist is enabled
+            if (this.playlistData.enabled && liveTimeoutMinutes > 0) {
                 const timeoutEnd = liveStartTime + (liveTimeoutMinutes * 60 * 1000);
                 const timeUntilTimeout = Math.max(0, timeoutEnd - Date.now());
                 const minutesUntilTimeout = Math.ceil(timeUntilTimeout / (60 * 1000));
                 timeoutInfo = `<p>Returns to playlist in: ${minutesUntilTimeout} minute(s)</p>`;
-            } else {
-                timeoutInfo = '<p>No timeout - stays in live mode</p>';
+            } else if (this.playlistData.enabled && liveTimeoutMinutes === 0) {
+                timeoutInfo = '<p>No timeout - stays in override mode</p>';
+            } else if (!this.playlistData.enabled) {
+                timeoutInfo = '<p>Playlist is stopped - no timeout</p>';
             }
 
             const liveText = 'Override is being displayed';
+            const playlistStatus = this.playlistData.enabled ? 'enabled' : 'stopped';
 
             info.innerHTML = `
                 <div class="playlist-icon">
@@ -1055,7 +1075,7 @@ class EinkDisplayManager {
                     <h4>Override Active</h4>
                     <p>${liveText}</p>
                     ${timeoutInfo}
-                    <p>Playlist: ${this.playlistData.current_playlist_name || 'default'}</p>
+                    <p>Playlist: ${this.playlistData.current_playlist_name || 'default'} (${playlistStatus})</p>
                 </div>
             `;
             return;
@@ -1815,6 +1835,126 @@ class EinkDisplayManager {
             console.error('Error toggling playlist:', error);
             this.showToast(`Failed to toggle playlist: ${error.message}`, 'error');
         }
+    }
+
+    async showWelcomeScreen() {
+        try {
+            const response = await fetch('/show_welcome_screen', {
+                method: 'POST'
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                this.showToast('Welcome screen displayed - will auto-revert in 10 seconds', 'success');
+            } else {
+                throw new Error(data.error || 'Failed to show welcome screen');
+            }
+        } catch (error) {
+            console.error('Show welcome screen failed:', error);
+            this.showToast(`Failed to show welcome screen: ${error.message}`, 'error');
+        }
+    }
+
+    // ============ CAMERA FUNCTIONALITY ============
+
+    openCamera() {
+        // Try different camera inputs based on browser
+        const isFirefox = navigator.userAgent.toLowerCase().indexOf('firefox') > -1;
+        const isChrome = navigator.userAgent.toLowerCase().indexOf('chrome') > -1;
+
+        let cameraInput;
+        if (isFirefox) {
+            // Try alternative input for Firefox
+            cameraInput = document.getElementById('camera-input-alt');
+            if (!cameraInput) {
+                cameraInput = document.getElementById('camera-input');
+            }
+        } else {
+            // Use main camera input for other browsers
+            cameraInput = document.getElementById('camera-input');
+        }
+
+        if (cameraInput) {
+            // For Chrome, add visibility change handler to detect return from camera
+            if (isChrome) {
+                this.setupChromeReturnHandler();
+            }
+
+            cameraInput.click();
+            console.log(`Using camera input for ${isFirefox ? 'Firefox' : isChrome ? 'Chrome' : 'other browser'}`);
+        } else {
+            this.showToast('Camera not available', 'error');
+        }
+    }
+
+    setupChromeReturnHandler() {
+        // Handle Chrome returning from camera app
+        const handleVisibilityChange = () => {
+            if (!document.hidden) {
+                console.log('Returned to page from camera');
+                // Give Chrome a moment to process the file selection
+                setTimeout(() => {
+                    // Check if files were selected
+                    const cameraInput = document.getElementById('camera-input');
+                    if (cameraInput && cameraInput.files && cameraInput.files.length > 0) {
+                        console.log('Camera photo detected after return');
+                    }
+                }, 100);
+            }
+        };
+
+        // Add the listener (will be cleaned up when page changes)
+        document.addEventListener('visibilitychange', handleVisibilityChange, { once: true });
+
+        // Clean up after 30 seconds if not used
+        setTimeout(() => {
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+        }, 30000);
+    }
+
+    async handleCameraCapture(e) {
+        const files = Array.from(e.target.files);
+        if (files.length === 0) return;
+
+        const file = files[0];
+
+        // Validate it's an image
+        if (!file.type.startsWith('image/')) {
+            this.showToast('Please capture an image file', 'error');
+            return;
+        }
+
+        try {
+            // Create a descriptive filename with timestamp
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+            const originalName = file.name || 'camera-photo.jpg';
+            const extension = originalName.split('.').pop() || 'jpg';
+            const newFilename = `camera-${timestamp}.${extension}`;
+
+            // Create a new file with the descriptive name
+            const renamedFile = new File([file], newFilename, { type: file.type });
+
+            this.showToast('Uploading camera photo...', 'info');
+
+            // Upload the photo using existing upload logic
+            await this.uploadSingleFile(renamedFile, 1, 1);
+
+            this.showToast('Camera photo uploaded successfully!', 'success');
+
+            // Refresh file list and display status
+            setTimeout(async () => {
+                await this.loadFiles();
+                await this.forceRefreshDisplayedFile();
+            }, 1500);
+
+        } catch (error) {
+            console.error('Camera upload failed:', error);
+            this.showToast(`Failed to upload photo: ${error.message}`, 'error');
+        }
+
+        // Reset the input
+        e.target.value = '';
     }
 
     // debug force-sync logic removed

@@ -95,7 +95,9 @@ DEFAULT_SETTINGS = {
             'files': [],
             'current_index': 0,
             'last_change': 0,
-            'randomize': False
+            'randomize': False,
+            'shuffled_order': [],
+            'shuffle_index': 0
         }
     },
     'display_mode': 'playlist',        # 'manual', 'playlist', or 'live' (TouchDesigner upload)
@@ -451,12 +453,31 @@ def advance_playlist():
         randomize = current_playlist.get('randomize', False)
 
         if randomize:
-            # Random selection - pick any file except the current one (if there are multiple files)
-            if len(existing_files) > 1:
-                available_indices = [i for i in range(len(existing_files)) if i != current_index]
-                current_index = random.choice(available_indices)
-            else:
-                current_index = 0
+            # Shuffle approach - ensure every file is shown once before repeating
+            shuffled_order = current_playlist.get('shuffled_order', [])
+            shuffle_index = current_playlist.get('shuffle_index', 0)
+
+            # Initialize or regenerate shuffled order if needed
+            if (not shuffled_order or
+                len(shuffled_order) != len(existing_files) or
+                shuffle_index >= len(shuffled_order) or
+                set(shuffled_order) != set(range(len(existing_files)))):
+
+                # Create new shuffled order
+                shuffled_order = list(range(len(existing_files)))
+                random.shuffle(shuffled_order)
+                shuffle_index = 0
+                logger.info(f"Generated new shuffled order for playlist '{current_playlist_name}': {shuffled_order}")
+
+            # Get the current file from shuffled order
+            current_index = shuffled_order[shuffle_index]
+
+            # Advance shuffle index for next time
+            shuffle_index = (shuffle_index + 1) % len(shuffled_order)
+
+            # Store the updated shuffle state
+            current_playlist['shuffled_order'] = shuffled_order
+            current_playlist['shuffle_index'] = shuffle_index
         else:
             # Sequential selection - advance to next file
             current_index = (current_index + 1) % len(existing_files)
@@ -479,7 +500,12 @@ def advance_playlist():
             settings['playlists'][current_playlist_name] = current_playlist
             playlist_save_success = save_settings(settings)
 
-            mode_text = "random" if randomize else "sequential"
+            if randomize:
+                shuffle_pos = current_playlist.get('shuffle_index', 0)
+                total_in_shuffle = len(current_playlist.get('shuffled_order', []))
+                mode_text = f"shuffle ({shuffle_pos}/{total_in_shuffle})"
+            else:
+                mode_text = "sequential"
             logger.info(f"Playlist '{current_playlist_name}' advanced to: {filename} (index {current_index}, {mode_text} mode)")
             logger.info(f"Playlist settings save result: {playlist_save_success}")
 
@@ -1225,6 +1251,28 @@ def clear_screen():
         logger.error(f"Clear screen error: {e}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/show_welcome_screen', methods=['POST'])
+@login_required
+def show_welcome_screen():
+    """Display the welcome screen with IP address and system information"""
+    try:
+        # Send welcome screen command to the main display handler
+        command_file = Path(COMMANDS_DIR) / 'show_welcome_screen.json'
+        command_data = {
+            'action': 'show_welcome_screen',
+            'timestamp': time.time()
+        }
+
+        with open(command_file, 'w') as f:
+            json.dump(command_data, f)
+
+        logger.info("Welcome screen display requested")
+        return jsonify({'message': 'Welcome screen displayed successfully'}), 200
+
+    except Exception as e:
+        logger.error(f"Show welcome screen error: {e}")
+        return jsonify({'error': str(e)}), 500
+
 # ============ NEW API ROUTES ============
 
 @app.route('/display_file', methods=['POST'])
@@ -1517,7 +1565,9 @@ def update_playlist():
                     'files': [],
                     'current_index': 0,
                     'last_change': 0,
-                    'randomize': False
+                    'randomize': False,
+                    'shuffled_order': [],
+                    'shuffle_index': 0
                 }
 
             # Update files if provided
@@ -1533,12 +1583,18 @@ def update_playlist():
 
                 playlists[current_playlist_name]['files'] = valid_files
                 playlists[current_playlist_name]['current_index'] = 0  # Reset to start
+                # Clear shuffle state when files change to force regeneration
+                playlists[current_playlist_name]['shuffled_order'] = []
+                playlists[current_playlist_name]['shuffle_index'] = 0
 
             # Update randomize setting if provided
             if 'randomize' in data:
                 playlists[current_playlist_name]['randomize'] = bool(data['randomize'])
                 # Reset index when changing randomize mode
                 playlists[current_playlist_name]['current_index'] = 0
+                # Clear shuffle state to force regeneration
+                playlists[current_playlist_name]['shuffled_order'] = []
+                playlists[current_playlist_name]['shuffle_index'] = 0
 
             settings['playlists'] = playlists
 
@@ -1671,7 +1727,9 @@ def create_playlist():
             'files': data.get('files', []),
             'current_index': 0,
             'last_change': 0,
-            'randomize': data.get('randomize', False)
+            'randomize': data.get('randomize', False),
+            'shuffled_order': [],
+            'shuffle_index': 0
         }
 
         settings['playlists'] = playlists
