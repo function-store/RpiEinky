@@ -60,25 +60,6 @@ body {
     gap: 12px;
 }
 
-.logout-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    background: var(--danger-color);
-    color: white;
-    border-radius: 8px;
-    text-decoration: none;
-    transition: all 0.2s ease;
-    font-size: 16px;
-}
-
-.logout-btn:hover {
-    background: #dc2626;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(239, 68, 68, 0.3);
-}
 
 .header-info {
     display: flex;

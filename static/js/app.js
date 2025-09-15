@@ -101,6 +101,7 @@ class EinkDisplayManager {
         document.getElementById('clean-folder-settings').addEventListener('click', this.cleanFolder.bind(this));
         document.getElementById('show-welcome-screen').addEventListener('click', this.showWelcomeScreen.bind(this));
         document.getElementById('refresh-files-settings').addEventListener('click', this.refreshFiles.bind(this));
+        document.getElementById('logout-settings').addEventListener('click', this.logout.bind(this));
         document.getElementById('settings-modal').addEventListener('click', (e) => {
             if (e.target.id === 'settings-modal') this.closeSettings();
         });
@@ -1854,6 +1855,11 @@ class EinkDisplayManager {
             console.error('Show welcome screen failed:', error);
             this.showToast(`Failed to show welcome screen: ${error.message}`, 'error');
         }
+    }
+
+    logout() {
+        // Redirect to logout route
+        window.location.href = '/logout';
     }
 
     // ============ CAMERA FUNCTIONALITY ============

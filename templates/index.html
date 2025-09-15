@@ -15,9 +15,6 @@
             <div class="header-content">
                 <h1><i class="fas fa-tv"></i> E-ink Display Manager</h1>
                 <div class="header-actions">
-                    <a href="{{ url_for('logout') }}" class="logout-btn" title="Logout">
-                        <i class="fas fa-sign-out-alt"></i>
-                    </a>
                 </div>
                 <div class="header-info">
                     <div class="status-indicator" id="status-indicator">
@@ -450,6 +447,17 @@
                         </button>
                         <p class="setting-description">
                             Display the welcome screen with IP address and system information. Useful for debugging network connections.
+                        </p>
+                    </div>
+
+                    <div class="setting-group">
+                        <label>Session:</label>
+                        <button class="btn danger" id="logout-settings">
+                            <i class="fas fa-sign-out-alt"></i>
+                            Logout
+                        </button>
+                        <p class="setting-description">
+                            Log out of the web interface. You will need to enter the password again to access the system.
                         </p>
                     </div>
                 </div>
