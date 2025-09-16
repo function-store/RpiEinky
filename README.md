@@ -9,6 +9,7 @@ A comprehensive e-ink display management system designed for [Raspberry Pi](http
 - [Purpose](#purpose)
 - [Features](#features)
 - [Installation](#installation)
+- [Localization](#localization)
 - [TouchDesigner Integration](#touchdesigner-integration)
 - [Architecture](#architecture)
 - [Command Line Arguments](#command-line-arguments)
@@ -50,10 +51,18 @@ Tested with [Raspberryi Pi Zero](https://www.raspberrypi.com/products/raspberry-
 - **One-Click Display** - Click any file to display it immediately on the e-ink screen
 - **File Management** - Delete individual files or multiple files at once
 - **Responsive Design** - Works on desktop, tablet, and mobile devices
+- **Localization** - Supports multiple languages (English, Hungarian) with persistent preference.
 - **Network Access** - Access from any device on your local network (TODO remote network)
  - **Playlists** - Multiple playlists, reorder items, randomize, and pick active playlist from the main UI
  - **Override** - Manual display or Clear acts as an override that pauses the playlist until timeout or until you press Start Playlist
 
+### Localization
+
+The web interface supports multiple languages, allowing users to switch between them seamlessly. Your language preference is saved for future sessions.
+
+- **Supported Languages**: English (default), Hungarian
+- **How to Change Language**: Navigate to `Settings` -> `Language` and select your preferred language. The interface will update immediately.
+-
 ### Display Capabilities
 - **Multiple File Types** - Images (JPG, PNG, BMP), text files, PDFs, and more
 - **Auto-Resizing** - Images automatically resize to fit your display
