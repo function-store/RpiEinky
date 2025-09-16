@@ -39,6 +39,68 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Simple localization support
+MESSAGES = {
+    'en': {
+        'file_uploaded': 'File uploaded successfully',
+        'file_deleted': 'File deleted successfully',
+        'display_cleared': 'Display cleared',
+        'settings_saved': 'Settings saved successfully',
+        'playlist_saved': 'Playlist saved successfully',
+        'playlist_started': 'Playlist started',
+        'playlist_stopped': 'Playlist stopped',
+        'playlist_resumed': 'Playlist resumed',
+        'welcome_screen_displayed': 'Welcome screen displayed',
+        'files_refreshed': 'File list refreshed',
+        'folder_cleaned': 'All files deleted successfully',
+        'connection_lost': 'Connection lost',
+        'connection_restored': 'Connection restored',
+        'upload_failed': 'Failed to upload file',
+        'delete_failed': 'Failed to delete file',
+        'settings_failed': 'Failed to save settings',
+        'playlist_failed': 'Failed to save playlist'
+    },
+    'hu': {
+        'file_uploaded': 'Fájl sikeresen feltöltve',
+        'file_deleted': 'Fájl sikeresen törölve',
+        'display_cleared': 'Kijelző törölve',
+        'settings_saved': 'Beállítások sikeresen mentve',
+        'playlist_saved': 'Lejátszási lista sikeresen mentve',
+        'playlist_started': 'Lejátszási lista elindítva',
+        'playlist_stopped': 'Lejátszási lista leállítva',
+        'playlist_resumed': 'Lejátszási lista folytatva',
+        'welcome_screen_displayed': 'Üdvözlő képernyő megjelenítve',
+        'files_refreshed': 'Fájllista frissítve',
+        'folder_cleaned': 'Minden fájl sikeresen törölve',
+        'connection_lost': 'Kapcsolat megszakadt',
+        'connection_restored': 'Kapcsolat helyreállt',
+        'upload_failed': 'Fájl feltöltése sikertelen',
+        'delete_failed': 'Fájl törlése sikertelen',
+        'settings_failed': 'Beállítások mentése sikertelen',
+        'playlist_failed': 'Lejátszási lista mentése sikertelen'
+    }
+}
+
+def get_message(key, lang='en'):
+    """Get localized message"""
+    return MESSAGES.get(lang, {}).get(key, MESSAGES['en'].get(key, key))
+
+def get_client_language():
+    """Get client language from request headers or session"""
+    # Try to get from session first
+    lang = session.get('language')
+    if lang and lang in MESSAGES:
+        return lang
+
+    # Try to get from Accept-Language header
+    if request.headers.get('Accept-Language'):
+        for lang_code in request.headers.get('Accept-Language', '').split(','):
+            lang = lang_code.split('-')[0].strip()
+            if lang in MESSAGES:
+                return lang
+
+    return 'en'  # Default to English
+
 app = Flask(__name__, template_folder='templates', static_folder='static')
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max file size
 
@@ -85,6 +147,7 @@ DEFAULT_SETTINGS = {
     'enable_manufacturer_timing': False,  # Enable manufacturer timing requirements (180s minimum)
     'enable_sleep_mode': True,  # Enable sleep mode between operations (power efficiency)
     'orientation': 'landscape',  # Display orientation: 'landscape', 'portrait', 'landscape_flipped', 'portrait_flipped'
+    'language': 'en',  # Interface language: 'en', 'hu'
     # Playlist settings
     'playlist_enabled': True,          # Enable playlist mode
     'playlist_interval_minutes': 5,    # Minutes between playlist image changes
@@ -907,6 +970,11 @@ def update_settings():
                     changed_settings.append(key)
             else:
                 logger.warning(f"Unknown setting key: {key}")
+
+        # Update session language if it changed
+        if 'language' in changed_settings:
+            session['language'] = current_settings['language']
+            logger.info(f"Updated session language to: {current_settings['language']}")
 
         # Save updated settings
         if save_settings(current_settings):

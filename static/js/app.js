@@ -7,13 +7,26 @@ class EinkDisplayManager {
         this.currentlyDisplayedFile = null;
         this.displayMode = 'manual';
         this.playlistData = null;
+        this.displayInfo = null;
+        this.currentStatus = 'connecting';
 
         this.init();
     }
 
     async init() {
+        // Load settings first to get server language preference
+        await this.loadInitialSettings();
+
+        // Wait for i18n to initialize
+        if (window.i18n) {
+            await window.i18n.init();
+        }
+
         // Bind events first
         this.bindEvents();
+
+        // Setup i18n integration
+        this.setupI18n();
 
         // Initial status check
         await this.checkServerStatus();
@@ -29,6 +42,22 @@ class EinkDisplayManager {
 
         // Start polling for updates
         this.startPolling();
+    }
+
+    async loadInitialSettings() {
+        try {
+            const response = await fetch('/settings');
+            if (response.ok) {
+                const settings = await response.json();
+
+                // Sync server language preference with localStorage for i18n
+                if (settings.language && window.localStorage) {
+                    localStorage.setItem('language', settings.language);
+                }
+            }
+        } catch (error) {
+            console.warn('Could not load initial settings for language sync:', error);
+        }
     }
 
     startPolling() {
@@ -102,6 +131,7 @@ class EinkDisplayManager {
         document.getElementById('show-welcome-screen').addEventListener('click', this.showWelcomeScreen.bind(this));
         document.getElementById('refresh-files-settings').addEventListener('click', this.refreshFiles.bind(this));
         document.getElementById('logout-settings').addEventListener('click', this.logout.bind(this));
+        document.getElementById('language-select').addEventListener('change', this.changeLanguage.bind(this));
         document.getElementById('settings-modal').addEventListener('click', (e) => {
             if (e.target.id === 'settings-modal') this.closeSettings();
         });
@@ -192,7 +222,11 @@ class EinkDisplayManager {
         }
 
         if (uploadedCount > 0) {
-            this.showToast(`Successfully uploaded ${uploadedCount} file(s)`, 'success');
+            if (window.i18n) {
+                this.showTranslatedToast('messages.file_uploaded', {}, 'success');
+            } else {
+                this.showToast(`Successfully uploaded ${uploadedCount} file(s)`, 'success');
+            }
 
             // Wait a moment for the server to process the upload
             setTimeout(async () => {
@@ -410,12 +444,10 @@ class EinkDisplayManager {
 
         // Determine display mode styling
         let modeClass = '';
-        let modeIndicator = '';
 
         if (isCurrentlyDisplayed) {
             if (this.displayMode === 'live') {
                 modeClass = 'live-mode';
-                modeIndicator = '<div class="live-indicator">OVERRIDE</div>';
             } else if (this.displayMode === 'playlist') {
                 modeClass = 'playlist-mode';
             }
@@ -434,8 +466,7 @@ class EinkDisplayManager {
                         `<i class="fas ${iconClass} file-icon ${file.type}"></i>`
                     }
                     <input type="checkbox" class="file-checkbox" ${this.selectedFiles.has(file.filename) ? 'checked' : ''}>
-                    ${isCurrentlyDisplayed ? '<div class="currently-displayed-badge"><i class="fas fa-tv"></i> Currently Displayed</div>' : ''}
-                    ${modeIndicator}
+                    ${isCurrentlyDisplayed ? `<div class="currently-displayed-badge"><i class="fas fa-tv"></i> ${window.i18n ? window.i18n.t('gallery.currently_displayed_badge') : 'Currently Displayed'}</div>` : ''}
                 </div>
                 <div class="file-info">
                     <div class="file-name">${file.filename}</div>
@@ -445,10 +476,12 @@ class EinkDisplayManager {
                     </div>
                     <div class="file-actions">
                                         <button class="file-btn display" data-action="display">
-                    <i class="fas fa-eye"></i> ${isCurrentlyDisplayed ? 'Refresh Display' : 'Display'}
+                    <i class="fas fa-eye"></i> ${isCurrentlyDisplayed ?
+                        (window.i18n ? window.i18n.t('gallery.refresh_display') : 'Refresh Display') :
+                        (window.i18n ? window.i18n.t('gallery.display') : 'Display')}
                 </button>
                         <button class="file-btn delete" data-action="delete">
-                            <i class="fas fa-trash"></i> Delete
+                            <i class="fas fa-trash"></i> ${window.i18n ? window.i18n.t('gallery.delete') : 'Delete'}
                         </button>
                     </div>
                 </div>
@@ -522,8 +555,16 @@ class EinkDisplayManager {
 
     updateFileStats() {
         const fileCount = this.files.length;
-        const fileCountText = fileCount === 1 ? '1 file' : `${fileCount} files`;
-        document.getElementById('file-stats').querySelector('.file-count').textContent = fileCountText;
+        const fileCountElement = document.getElementById('file-stats').querySelector('.file-count');
+
+        if (window.i18n) {
+            fileCountElement.textContent = window.i18n.t('gallery.files_count', { count: fileCount });
+            fileCountElement.setAttribute('data-i18n-param-count', fileCount);
+        } else {
+            // Fallback if i18n not available
+            const fileCountText = fileCount === 1 ? '1 file' : `${fileCount} files`;
+            fileCountElement.textContent = fileCountText;
+        }
 
         // Update currently displayed info
         const currentlyDisplayedInfo = document.getElementById('currently-displayed-info');
@@ -634,7 +675,14 @@ class EinkDisplayManager {
 
         if (this.selectedFiles.size > 0) {
             selectionControls.style.display = 'flex';
-            selectionCount.textContent = `${this.selectedFiles.size} selected`;
+
+            if (window.i18n) {
+                selectionCount.textContent = window.i18n.t('selection.selected_count', { count: this.selectedFiles.size });
+                selectionCount.setAttribute('data-i18n-param-count', this.selectedFiles.size);
+            } else {
+                // Fallback if i18n not available
+                selectionCount.textContent = `${this.selectedFiles.size} selected`;
+            }
         } else {
             selectionControls.style.display = 'none';
         }
@@ -732,14 +780,17 @@ class EinkDisplayManager {
             const response = await fetch('/status');
             if (response.ok) {
                 const status = await response.json();
+                this.currentStatus = 'connected';
                 this.updateStatusIndicator('connected');
                 return true;
             } else {
+                this.currentStatus = 'error';
                 this.updateStatusIndicator('error');
                 return false;
             }
         } catch (error) {
             console.error('Server status check failed:', error);
+            this.currentStatus = 'error';
             this.updateStatusIndicator('error');
             return false;
         }
@@ -752,13 +803,13 @@ class EinkDisplayManager {
 
         if (status === 'connected') {
             statusDot.className = 'status-dot connected';
-            statusText.textContent = 'Connected';
+            statusText.textContent = window.i18n ? window.i18n.t('app.connected') : 'Connected';
         } else if (status === 'error') {
             statusDot.className = 'status-dot error';
-            statusText.textContent = 'Connection Error';
+            statusText.textContent = window.i18n ? window.i18n.t('app.connection_error') : 'Connection Error';
         } else {
             statusDot.className = 'status-dot';
-            statusText.textContent = 'Connecting...';
+            statusText.textContent = window.i18n ? window.i18n.t('app.connecting') : 'Connecting...';
         }
     }
 
@@ -767,20 +818,27 @@ class EinkDisplayManager {
             const response = await fetch('/display_info');
             if (response.ok) {
                 const displayInfo = await response.json();
-                const resolutionElement = document.getElementById('display-resolution');
-                const displayInfoElement = document.getElementById('display-info');
-
-                if (resolutionElement && displayInfoElement) {
-                    const { resolution, display_type } = displayInfo;
-                    resolutionElement.textContent = `${resolution.width}×${resolution.height}`;
-                    displayInfoElement.style.display = 'flex';
-
-                    // Add tooltip with more details
-                    displayInfoElement.title = `${display_type} display (${resolution.width}×${resolution.height} landscape)`;
-                }
+                this.displayInfo = displayInfo; // Store for later use
+                this.updateDisplayInfo();
             }
         } catch (error) {
             console.error('Failed to load display info:', error);
+        }
+    }
+
+    updateDisplayInfo() {
+        if (!this.displayInfo) return;
+
+        const resolutionElement = document.getElementById('display-resolution');
+        const displayInfoElement = document.getElementById('display-info');
+
+        if (resolutionElement && displayInfoElement) {
+            const { resolution, display_type } = this.displayInfo;
+            resolutionElement.textContent = `${resolution.width}×${resolution.height}`;
+            displayInfoElement.style.display = 'flex';
+
+            // Add tooltip with more details
+            displayInfoElement.title = `${display_type} display (${resolution.width}×${resolution.height} landscape)`;
         }
     }
 
@@ -801,6 +859,12 @@ class EinkDisplayManager {
                 toast.parentNode.removeChild(toast);
             }
         }, 5000);
+    }
+
+    // Helper method for translated toasts
+    showTranslatedToast(key, params = {}, type = 'info') {
+        const message = window.i18n ? window.i18n.t(key, params) : key;
+        this.showToast(message, type);
     }
 
     showModal(title, message, onConfirm) {
@@ -872,6 +936,12 @@ class EinkDisplayManager {
         document.getElementById('enable-sleep-mode').checked = settings.enable_sleep_mode !== false;
         document.getElementById('orientation').value = settings.orientation || 'landscape';
 
+        // Set language
+        const languageSelect = document.getElementById('language-select');
+        if (languageSelect && settings.language) {
+            languageSelect.value = settings.language;
+        }
+
         // Update refresh interval field state based on refresh timer setting
         this.updateRefreshIntervalFieldState();
 
@@ -895,7 +965,8 @@ class EinkDisplayManager {
                 refresh_interval_hours: parseInt(document.getElementById('refresh-interval').value),
                 enable_manufacturer_timing: document.getElementById('enable-manufacturer-timing').checked,
                 enable_sleep_mode: document.getElementById('enable-sleep-mode').checked,
-                orientation: newOrientation
+                orientation: newOrientation,
+                language: document.getElementById('language-select').value
             };
 
             const response = await fetch('/settings', {
@@ -972,15 +1043,26 @@ class EinkDisplayManager {
                         setTimeout(() => this.loadCurrentlyDisplayedFile(), 100);
                     }
 
-                    contextInfo = `Displaying from playlist "${playlistName}"${randomMode} (${currentIndex + 1}/${totalFiles})`;
-                    modeIndicator = '<span class="mode-badge playlist-mode-badge">PLAYLIST</span>';
+                    if (window.i18n) {
+                        contextInfo = window.i18n.t('gallery.playlist_context', {
+                            playlistName: playlistName,
+                            current: currentIndex + 1,
+                            total: totalFiles
+                        }) + randomMode;
+                    } else {
+                        contextInfo = `Displaying from playlist "${playlistName}"${randomMode} (${currentIndex + 1}/${totalFiles})`;
+                    }
+                    const playlistBadgeText = window.i18n ? window.i18n.t('gallery.playlist_badge') : 'PLAYLIST';
+                    modeIndicator = `<span class="mode-badge playlist-mode-badge">${playlistBadgeText}</span>`;
                 }
             } else if (this.displayMode === 'live') {
-                contextInfo = 'Override is being displayed.';
-                modeIndicator = '<span class="mode-badge live-mode-badge">OVERRIDE</span>';
+                contextInfo = window.i18n ? window.i18n.t('gallery.override_context') : 'Override is being displayed.';
+                const overrideBadgeText = window.i18n ? window.i18n.t('gallery.override_badge') : 'OVERRIDE';
+                modeIndicator = `<span class="mode-badge live-mode-badge">${overrideBadgeText}</span>`;
             } else if (this.displayMode === 'manual') {
-                contextInfo = 'Manually selected image is being displayed.';
-                modeIndicator = '<span class="mode-badge manual-mode-badge">MANUAL</span>';
+                contextInfo = window.i18n ? window.i18n.t('gallery.manual_context') : 'Manually selected image is being displayed.';
+                const manualBadgeText = window.i18n ? window.i18n.t('gallery.manual_badge') : 'MANUAL';
+                modeIndicator = `<span class="mode-badge manual-mode-badge">${manualBadgeText}</span>`;
             }
 
             info.innerHTML = `
@@ -1058,25 +1140,45 @@ class EinkDisplayManager {
                 const timeoutEnd = liveStartTime + (liveTimeoutMinutes * 60 * 1000);
                 const timeUntilTimeout = Math.max(0, timeoutEnd - Date.now());
                 const minutesUntilTimeout = Math.ceil(timeUntilTimeout / (60 * 1000));
-                timeoutInfo = `<p>Returns to playlist in: ${minutesUntilTimeout} minute(s)</p>`;
+                const timeoutText = window.i18n ?
+                    window.i18n.t('playlist.returns_to_playlist', { minutes: minutesUntilTimeout }) :
+                    `Returns to playlist in: ${minutesUntilTimeout} minute(s)`;
+                timeoutInfo = `<p>${timeoutText}</p>`;
             } else if (this.playlistData.enabled && liveTimeoutMinutes === 0) {
-                timeoutInfo = '<p>No timeout - stays in override mode</p>';
+                const noTimeoutText = window.i18n ?
+                    window.i18n.t('playlist.no_timeout') :
+                    'No timeout - stays in override mode';
+                timeoutInfo = `<p>${noTimeoutText}</p>`;
             } else if (!this.playlistData.enabled) {
-                timeoutInfo = '<p>Playlist is stopped - no timeout</p>';
+                const stoppedText = window.i18n ?
+                    window.i18n.t('playlist.playlist_stopped_no_timeout') :
+                    'Playlist is stopped - no timeout';
+                timeoutInfo = `<p>${stoppedText}</p>`;
             }
 
-            const liveText = 'Override is being displayed';
-            const playlistStatus = this.playlistData.enabled ? 'enabled' : 'stopped';
+            const liveText = window.i18n ?
+                window.i18n.t('playlist.override_being_displayed') :
+                'Override is being displayed';
+            const playlistStatus = this.playlistData.enabled ?
+                (window.i18n ? window.i18n.t('playlist.enabled') : 'enabled') :
+                (window.i18n ? window.i18n.t('playlist.stopped') : 'stopped');
+
+            const overrideActiveText = window.i18n ?
+                window.i18n.t('playlist.override_active') :
+                'Override Active';
+            const playlistLabelText = window.i18n ?
+                window.i18n.t('playlist.playlist_label') :
+                'Playlist:';
 
             info.innerHTML = `
                 <div class="playlist-icon">
                     <i class="fas fa-broadcast-tower" style="color: #ef4444;"></i>
                 </div>
                 <div class="playlist-status-details">
-                    <h4>Override Active</h4>
+                    <h4>${overrideActiveText}</h4>
                     <p>${liveText}</p>
                     ${timeoutInfo}
-                    <p>Playlist: ${this.playlistData.current_playlist_name || 'default'} (${playlistStatus})</p>
+                    <p>${playlistLabelText} ${this.playlistData.current_playlist_name || 'default'} (${playlistStatus})</p>
                 </div>
             `;
             return;
@@ -1683,7 +1785,7 @@ class EinkDisplayManager {
             });
 
             if (response.ok) {
-                this.showToast('Playlist stopped', 'success');
+                this.showTranslatedToast('messages.playlist_stopped', {}, 'success');
 
                 // Refresh playlist data and UI
                 await this.loadPlaylistData();
@@ -1710,7 +1812,7 @@ class EinkDisplayManager {
             toggleBtn.setAttribute('data-enabled', 'false');
             toggleBtn.disabled = true;
             toggleIcon.className = 'fas fa-spinner fa-spin';
-            toggleText.textContent = 'Loading...';
+            toggleText.textContent = window.i18n ? window.i18n.t('app.loading') : 'Loading...';
             return;
         }
 
@@ -1723,13 +1825,13 @@ class EinkDisplayManager {
             if (isEnabled) {
                 // Playlist is running but in override - offer to resume or stop
                 toggleIcon.className = 'fas fa-play';
-                toggleText.textContent = 'Resume Playlist';
+                toggleText.textContent = window.i18n ? window.i18n.t('playlist.resume_playlist') : 'Resume Playlist';
                 // When in live, clicking the toggle should resume playlist immediately
                 toggleBtn.onclick = async () => {
                     try {
                         const resp = await fetch('/api/playlist/resume', { method: 'POST' });
                         if (resp.ok) {
-                            this.showToast('Playlist resumed', 'success');
+                            this.showTranslatedToast('messages.playlist_resumed', {}, 'success');
                             await this.loadPlaylistData();
                             await this.loadCurrentlyDisplayedFile();
                             this.renderFiles();
@@ -1744,7 +1846,7 @@ class EinkDisplayManager {
             } else {
                 // Playlist is stopped and in override - offer to start
                 toggleIcon.className = 'fas fa-play';
-                toggleText.textContent = 'Start Playlist';
+                toggleText.textContent = window.i18n ? window.i18n.t('playlist.start_playlist') : 'Start Playlist';
                 // Use the regular toggle playlist function
                 toggleBtn.onclick = null;
             }
@@ -1755,10 +1857,10 @@ class EinkDisplayManager {
         toggleBtn.onclick = null;
         if (isEnabled) {
             toggleIcon.className = 'fas fa-stop';
-            toggleText.textContent = 'Stop Playlist';
+            toggleText.textContent = window.i18n ? window.i18n.t('playlist.stop_playlist') : 'Stop Playlist';
         } else {
             toggleIcon.className = 'fas fa-play';
-            toggleText.textContent = 'Start Playlist';
+            toggleText.textContent = window.i18n ? window.i18n.t('playlist.start_playlist') : 'Start Playlist';
         }
     }
 
@@ -1821,7 +1923,7 @@ class EinkDisplayManager {
             });
 
             if (response.ok) {
-                this.showToast(newEnabled ? 'Playlist started' : 'Playlist stopped', 'success');
+                this.showTranslatedToast(newEnabled ? 'messages.playlist_started' : 'messages.playlist_stopped', {}, 'success');
 
                 // Refresh playlist data and UI
                 await this.loadPlaylistData();
@@ -1860,6 +1962,124 @@ class EinkDisplayManager {
     logout() {
         // Redirect to logout route
         window.location.href = '/logout';
+    }
+
+    // ============ I18N FUNCTIONALITY ============
+
+    setupI18n() {
+        if (!window.i18n) return;
+
+        // Set initial language in selector
+        const languageSelect = document.getElementById('language-select');
+        if (languageSelect) {
+            languageSelect.value = window.i18n.getCurrentLanguage();
+        }
+
+        // Listen for language changes
+        document.addEventListener('languageChanged', (event) => {
+            this.onLanguageChanged(event.detail.language);
+        });
+    }
+
+    async changeLanguage(event) {
+        const newLanguage = event.target.value;
+        console.log(`Changing language to: ${newLanguage}`);
+
+        if (window.i18n) {
+            await window.i18n.setLanguage(newLanguage);
+
+            // Force update all elements immediately
+            console.log('Forcing immediate UI updates...');
+            this.onLanguageChanged(newLanguage);
+
+            // Small delay to ensure all DOM updates complete
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            // Immediately save language preference to server
+            try {
+                const response = await fetch('/settings', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        language: newLanguage
+                    })
+                });
+
+                if (response.ok) {
+                    console.log(`Language preference saved to server: ${newLanguage}`);
+                    // Show brief success feedback
+                    const langName = newLanguage === 'hu' ? 'Magyar' : 'English';
+                    this.showToast(`Language changed to ${langName}`, 'success');
+                } else {
+                    console.warn('Failed to save language preference to server');
+                    this.showToast('Failed to save language preference', 'error');
+                }
+            } catch (error) {
+                console.error('Error saving language preference:', error);
+                this.showToast('Failed to save language preference', 'error');
+            }
+        }
+    }
+
+    onLanguageChanged(language) {
+        console.log(`Language changed event received: ${language}`);
+
+        // Force update all data-i18n elements first
+        if (window.i18n) {
+            window.i18n.updateElements();
+        }
+
+        // Update dynamic content that isn't handled by data-i18n attributes
+        this.updateDynamicTranslations();
+
+        // Update file count
+        this.updateFileStats();
+
+        // Update selection count
+        this.updateSelectionControls();
+
+        // Update playlist status if visible
+        if (this.playlistData) {
+            this.updatePlaylistStatus();
+            this.updatePlaylistToggleButton();
+            this.updateMainPlaylistSelector();
+        }
+
+        // Update status indicator with current status
+        this.updateStatusIndicator(this.currentStatus);
+
+        // Update display info (preserve resolution data)
+        this.updateDisplayInfo();
+
+        // Update currently displayed image section
+        this.updateCurrentlyDisplayedImage();
+
+        // Refresh file cards to update button text
+        this.renderFiles();
+
+        console.log('All UI elements updated for language change');
+    }
+
+    updateDynamicTranslations() {
+        if (!window.i18n) return;
+
+        // Update file count
+        const fileCountElement = document.querySelector('.file-count');
+        if (fileCountElement) {
+            const count = this.files.length;
+            fileCountElement.textContent = window.i18n.t('gallery.files_count', { count });
+            fileCountElement.setAttribute('data-i18n-param-count', count);
+        }
+
+        // Update selection count
+        const selectionCountElement = document.getElementById('selection-count');
+        if (selectionCountElement) {
+            const count = this.selectedFiles.size;
+            selectionCountElement.textContent = window.i18n.t('selection.selected_count', { count });
+            selectionCountElement.setAttribute('data-i18n-param-count', count);
+        }
     }
 
     // ============ CAMERA FUNCTIONALITY ============

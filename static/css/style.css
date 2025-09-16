@@ -1195,22 +1195,6 @@ body {
     color: var(--text-primary);
 }
 
-/* Live Indicator */
-.live-indicator {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    background: linear-gradient(135deg, #ef4444, #dc2626);
-    color: white;
-    padding: 4px 8px;
-    border-radius: 4px;
-    font-size: 0.7rem;
-    font-weight: bold;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    animation: pulse 2s infinite;
-    z-index: 10;
-}
 
 @keyframes pulse {
     0%, 100% { opacity: 1; }

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>E-ink Display Manager</title>
+    <title data-i18n="app.title">E-ink Display Manager</title>
     <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
@@ -13,17 +13,17 @@
         <!-- Header -->
         <header class="header">
             <div class="header-content">
-                <h1><i class="fas fa-tv"></i> E-ink Display Manager</h1>
+                <h1><i class="fas fa-tv"></i> <span data-i18n="app.title">E-ink Display Manager</span></h1>
                 <div class="header-actions">
                 </div>
                 <div class="header-info">
                     <div class="status-indicator" id="status-indicator">
                         <span class="status-dot"></span>
-                        <span class="status-text">Connecting...</span>
+                        <span class="status-text" data-i18n="app.connecting">Connecting...</span>
                     </div>
                     <div class="display-info" id="display-info" style="display: none;">
                         <i class="fas fa-expand-arrows-alt"></i>
-                        <span id="display-resolution">Loading...</span>
+                        <span id="display-resolution" data-i18n="app.loading">Loading...</span>
                     </div>
                 </div>
             </div>
@@ -34,8 +34,8 @@
             <div class="upload-area" id="upload-area">
                 <div class="upload-content">
                     <i class="fas fa-cloud-upload-alt upload-icon"></i>
-                    <h3>Drop files here or click to browse</h3>
-                    <p>Supports images, text files, and PDFs</p>
+                    <h3 data-i18n="upload.dropzone_title">Drop files here or click to browse</h3>
+                    <p data-i18n="upload.dropzone_subtitle">Supports images, text files, and PDFs</p>
                     <input type="file" id="file-input" multiple accept=".jpg,.jpeg,.png,.gif,.bmp,.txt,.md,.py,.js,.html,.css,.pdf,.json,.xml,.csv">
                     <input type="file" id="camera-input" accept="image/*" capture style="display: none;">
                 </div>
@@ -43,7 +43,7 @@
                     <div class="progress-bar">
                         <div class="progress-fill" id="progress-fill"></div>
                     </div>
-                    <div class="progress-text" id="progress-text">Uploading...</div>
+                    <div class="progress-text" id="progress-text" data-i18n="upload.uploading">Uploading...</div>
                 </div>
             </div>
 
@@ -51,7 +51,7 @@
             <div class="mobile-camera-controls" id="mobile-camera-controls">
                 <button class="control-btn camera-btn" id="take-photo-btn" title="Take Photo">
                     <i class="fas fa-camera"></i>
-                    Take Photo
+                    <span data-i18n="upload.take_photo">Take Photo</span>
                 </button>
                 <!-- Alternative camera input for better Firefox support -->
                 <input type="file" id="camera-input-alt" accept="image/*" capture="user" style="display: none;">
@@ -63,15 +63,15 @@
             <div class="controls-grid">
                 <button class="control-btn clear-btn" id="clear-display">
                     <i class="fas fa-eraser"></i>
-                    Clear Display
+                    <span data-i18n="controls.clear_display">Clear Display</span>
                 </button>
                 <button class="control-btn" id="open-settings">
                     <i class="fas fa-cog"></i>
-                    Settings
+                    <span data-i18n="controls.settings">Settings</span>
                 </button>
                 <button class="control-btn playlist-btn" id="open-playlist">
                     <i class="fas fa-list"></i>
-                    Playlist
+                    <span data-i18n="controls.playlists">Playlists</span>
                 </button>
                 <button class="control-btn playlist-toggle-btn" id="playlist-toggle" data-enabled="false">
                     <i class="fas fa-play"></i>
@@ -79,7 +79,7 @@
                 </button>
                 <button class="control-btn select-btn" id="select-multiple" style="display: none;">
                     <i class="fas fa-check-square"></i>
-                    Select Multiple
+                    <span data-i18n="controls.select_multiple">Select Multiple</span>
                 </button>
             </div>
         </section>
@@ -87,21 +87,21 @@
         <!-- Playlist Status Section -->
         <section class="playlist-status-section" id="playlist-status-section" style="display: none;">
             <div class="section-header">
-                <h2><i class="fas fa-list"></i> Playlist Status</h2>
+                <h2><i class="fas fa-list"></i> <span data-i18n="playlist.status">Playlist Status</span></h2>
                 <div class="playlist-controls">
                     <div class="playlist-selector-main">
-                        <label for="main-playlist-selector">Active Playlist:</label>
+                        <label for="main-playlist-selector" data-i18n="playlist.active_playlist">Active Playlist:</label>
                         <select id="main-playlist-selector" class="playlist-dropdown">
-                            <option value="default">Default Playlist</option>
+                            <option value="default" data-i18n="playlist.default_playlist">Default Playlist</option>
                         </select>
                     </div>
                     <button class="control-btn" id="playlist-advance">
                         <i class="fas fa-step-forward"></i>
-                        Next
+                        <span data-i18n="playlist.next">Next</span>
                     </button>
                     <button class="control-btn danger-btn" id="playlist-stop-override" style="display: none;">
                         <i class="fas fa-stop"></i>
-                        Stop Playlist
+                        <span data-i18n="playlist.stop_playlist">Stop Playlist</span>
                     </button>
                 </div>
             </div>
@@ -113,7 +113,7 @@
         <!-- Currently Displayed Image Section -->
         <section class="currently-displayed-section" id="currently-displayed-section" style="display: none;">
             <div class="section-header">
-                <h2><i class="fas fa-eye"></i> Currently Displayed Image</h2>
+                <h2><i class="fas fa-eye"></i> <span data-i18n="gallery.currently_displayed">Currently Displayed Image</span></h2>
             </div>
             <div class="currently-displayed-info" id="currently-displayed-info">
                 <!-- Currently displayed image info will be shown here -->
@@ -123,11 +123,11 @@
         <!-- File Gallery Section -->
         <section class="files-section">
             <div class="section-header">
-                <h2><i class="fas fa-folder-open"></i> File Gallery</h2>
+                <h2><i class="fas fa-folder-open"></i> <span data-i18n="gallery.file_gallery">File Gallery</span></h2>
                 <div class="file-stats" id="file-stats">
-                    <span class="file-count">0 files</span>
+                    <span class="file-count" data-i18n="gallery.files_count" data-i18n-param-count="0">0 files</span>
                     <span class="currently-displayed-info" id="currently-displayed-info" style="display: none;">
-                        <i class="fas fa-tv"></i> Currently Displayed: <span id="currently-displayed-filename"></span>
+                        <i class="fas fa-tv"></i> <span data-i18n="gallery.currently_displayed_short">Currently Displayed:</span> <span id="currently-displayed-filename"></span>
                     </span>
                 </div>
             </div>
@@ -138,24 +138,24 @@
 
             <div class="empty-state" id="empty-state" style="display: none;">
                 <i class="fas fa-folder-open empty-icon"></i>
-                <h3>No files yet</h3>
-                <p>Upload some files to get started!</p>
+                <h3 data-i18n="gallery.no_files">No files yet</h3>
+                <p data-i18n="gallery.upload_to_start">Upload some files to get started!</p>
             </div>
         </section>
 
         <!-- Selection Controls (hidden by default) -->
         <div class="selection-controls" id="selection-controls" style="display: none;">
             <div class="selection-info">
-                <span id="selection-count">0 selected</span>
+                <span id="selection-count" data-i18n="selection.selected_count" data-i18n-param-count="0">0 selected</span>
             </div>
             <div class="selection-actions">
                 <button class="control-btn danger-btn" id="delete-selected">
                     <i class="fas fa-trash"></i>
-                    Delete Selected
+                    <span data-i18n="selection.delete_selected">Delete Selected</span>
                 </button>
                 <button class="control-btn" id="cancel-selection">
                     <i class="fas fa-times"></i>
-                    Cancel
+                    <span data-i18n="selection.cancel">Cancel</span>
                 </button>
             </div>
         </div>
@@ -168,14 +168,14 @@
     <div class="modal-overlay" id="modal-overlay" style="display: none;">
         <div class="modal">
             <div class="modal-header">
-                <h3 id="modal-title">Confirm Action</h3>
+                <h3 id="modal-title" data-i18n="modal.confirm_action">Confirm Action</h3>
             </div>
             <div class="modal-body">
-                <p id="modal-message">Are you sure?</p>
+                <p id="modal-message" data-i18n="modal.are_you_sure">Are you sure?</p>
             </div>
             <div class="modal-footer">
-                <button class="btn secondary" id="modal-cancel">Cancel</button>
-                <button class="btn primary" id="modal-confirm">Confirm</button>
+                <button class="btn secondary" id="modal-cancel" data-i18n="modal.cancel">Cancel</button>
+                <button class="btn primary" id="modal-confirm" data-i18n="modal.confirm">Confirm</button>
             </div>
         </div>
     </div>
@@ -304,19 +304,19 @@
     <div class="modal-overlay" id="settings-modal" style="display: none;">
         <div class="modal">
             <div class="modal-header">
-                <h3><i class="fas fa-cog"></i> Display Settings</h3>
+                <h3><i class="fas fa-cog"></i> <span data-i18n="settings.title">Display Settings</span></h3>
             </div>
             <div class="modal-body">
                 <!-- Display Settings -->
                 <div class="settings-section">
-                    <h4><i class="fas fa-mobile-alt"></i> Display Settings</h4>
+                    <h4><i class="fas fa-mobile-alt"></i> <span data-i18n="settings.display_settings">Display Settings</span></h4>
                     <div class="setting-group">
-                        <label for="orientation">Display Orientation:</label>
+                        <label for="orientation" data-i18n="settings.display_orientation">Display Orientation:</label>
                         <select id="orientation" class="setting-input">
-                            <option value="landscape">Landscape (Normal) - Default</option>
-                            <option value="landscape_flipped">Landscape (Upside Down)</option>
-                            <option value="portrait">Portrait (Normal)</option>
-                            <option value="portrait_flipped">Portrait (Upside Down)</option>
+                            <option value="landscape" data-i18n="settings.orientation_landscape">Landscape (Normal) - Default</option>
+                            <option value="landscape_flipped" data-i18n="settings.orientation_landscape_flipped">Landscape (Upside Down)</option>
+                            <option value="portrait" data-i18n="settings.orientation_portrait">Portrait (Normal)</option>
+                            <option value="portrait_flipped" data-i18n="settings.orientation_portrait_flipped">Portrait (Upside Down)</option>
                         </select>
                         <p class="setting-description">
                             Choose how the display content is oriented. <strong>Portrait modes</strong> rotate the content 90° for vertical mounting.
@@ -414,14 +414,29 @@
                     </div>
                 </div>
 
+                <!-- Language Settings -->
+                <div class="settings-section">
+                    <h4><i class="fas fa-language"></i> Language</h4>
+                    <div class="setting-group">
+                        <label for="language-select" data-i18n="settings.language">Language:</label>
+                        <select id="language-select" class="setting-input">
+                            <option value="en">English</option>
+                            <option value="hu">Magyar</option>
+                        </select>
+                        <p class="setting-description">
+                            Choose your preferred language for the interface.
+                        </p>
+                    </div>
+                </div>
+
                 <!-- System Maintenance -->
                 <div class="settings-section">
-                    <h4><i class="fas fa-tools"></i> System Maintenance</h4>
+                    <h4><i class="fas fa-tools"></i> <span data-i18n="settings.system_maintenance">System Maintenance</span></h4>
                     <div class="setting-group">
-                        <label>Refresh File List:</label>
+                        <label data-i18n="settings.refresh_files">Refresh File List:</label>
                         <button class="btn secondary" id="refresh-files-settings">
                             <i class="fas fa-sync-alt"></i>
-                            Refresh Files
+                            <span data-i18n="settings.refresh_files">Refresh Files</span>
                         </button>
                         <p class="setting-description">
                             Reload the file gallery to sync with any files added or removed outside the web interface.
@@ -429,10 +444,10 @@
                     </div>
 
                     <div class="setting-group">
-                        <label>Clean All Files:</label>
+                        <label data-i18n="settings.clean_folder">Clean All Files:</label>
                         <button class="btn danger" id="clean-folder-settings">
                             <i class="fas fa-trash-alt"></i>
-                            Clean Folder
+                            <span data-i18n="settings.clean_folder">Clean Folder</span>
                         </button>
                         <p class="setting-description">
                             <strong>Warning:</strong> This will delete all files in the watched folder. This action cannot be undone.
@@ -440,10 +455,10 @@
                     </div>
 
                     <div class="setting-group">
-                        <label>Debug Display:</label>
+                        <label data-i18n="settings.show_welcome_screen">Debug Display:</label>
                         <button class="btn secondary" id="show-welcome-screen">
                             <i class="fas fa-tv"></i>
-                            Show Welcome Screen
+                            <span data-i18n="settings.show_welcome_screen">Show Welcome Screen</span>
                         </button>
                         <p class="setting-description">
                             Display the welcome screen with IP address and system information. Useful for debugging network connections.
@@ -451,10 +466,10 @@
                     </div>
 
                     <div class="setting-group">
-                        <label>Session:</label>
+                        <label data-i18n="settings.logout">Session:</label>
                         <button class="btn danger" id="logout-settings">
                             <i class="fas fa-sign-out-alt"></i>
-                            Logout
+                            <span data-i18n="settings.logout">Logout</span>
                         </button>
                         <p class="setting-description">
                             Log out of the web interface. You will need to enter the password again to access the system.
@@ -463,12 +478,13 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn secondary" id="settings-cancel">Cancel</button>
-                <button class="btn primary" id="settings-save">Save Settings</button>
+                <button class="btn secondary" id="settings-cancel" data-i18n="modal.cancel">Cancel</button>
+                <button class="btn primary" id="settings-save" data-i18n="settings.save_settings">Save Settings</button>
             </div>
         </div>
     </div>
 
+    <script src="{{ url_for('static', filename='js/i18n.js') }}"></script>
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
 </html>
