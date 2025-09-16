@@ -16,12 +16,54 @@ from PIL import Image
 import logging
 from functools import wraps
 
-# Load environment variables from .env file if it exists
+# Load environment variables from .env file if it exists (robust path handling)
+# Define candidate env file locations
+PROJECT_DIR = Path(__file__).resolve().parent
+PROJECT_ENV_PATH = PROJECT_DIR / '.env'
+HOME_ENV_PATH = Path.home() / 'RpiEinky' / '.env'
+ENV_PATH_USED = None
+
+def _load_env_file_manual(env_path: Path) -> bool:
+    try:
+        if not env_path.exists():
+            return False
+        with open(env_path, 'r') as f:
+            for raw_line in f:
+                line = raw_line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                if '=' not in line:
+                    continue
+                key, value = line.split('=', 1)
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                os.environ[key] = value
+        return True
+    except Exception as e:
+        logger.warning(f"Manual .env load failed from {env_path}: {e}")
+        return False
+
 try:
     from dotenv import load_dotenv
-    load_dotenv()
+    # Try project directory .env first, then user's RpiEinky folder
+    if PROJECT_ENV_PATH.exists():
+        load_dotenv(dotenv_path=str(PROJECT_ENV_PATH))
+        ENV_PATH_USED = str(PROJECT_ENV_PATH)
+    elif HOME_ENV_PATH.exists():
+        load_dotenv(dotenv_path=str(HOME_ENV_PATH))
+        ENV_PATH_USED = str(HOME_ENV_PATH)
+    else:
+        # Fallback to default discovery (current working dir)
+        load_dotenv()
+        ENV_PATH_USED = 'auto'
 except ImportError:
-    pass  # python-dotenv not installed, use system environment variables
+    # Fallback: try manual loader
+    if PROJECT_ENV_PATH.exists() and _load_env_file_manual(PROJECT_ENV_PATH):
+        ENV_PATH_USED = str(PROJECT_ENV_PATH)
+    elif HOME_ENV_PATH.exists() and _load_env_file_manual(HOME_ENV_PATH):
+        ENV_PATH_USED = str(HOME_ENV_PATH)
+    else:
+        ENV_PATH_USED = 'none'
 
 # Configure logging
 import os
@@ -112,8 +154,25 @@ app.config['SESSION_COOKIE_HTTPONLY'] = True  # Prevent JavaScript access to ses
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # CSRF protection
 
 # Admin password configuration
-ADMIN_PASSWORD_HASH = os.environ.get('ADMIN_PASSWORD_HASH',
-    hashlib.sha256('admin123'.encode()).hexdigest())  # Default password: admin123
+ADMIN_PASSWORD_HASH = (os.environ.get('ADMIN_PASSWORD_HASH') or '').strip().lower()
+
+# Support plaintext ADMIN_PASSWORD if provided (hash it), otherwise fall back to default
+if not ADMIN_PASSWORD_HASH:
+    if os.environ.get('ADMIN_PASSWORD'):
+        ADMIN_PASSWORD_HASH = hashlib.sha256(os.environ.get('ADMIN_PASSWORD', '').strip().encode()).hexdigest()
+    else:
+        ADMIN_PASSWORD_HASH = hashlib.sha256('admin123'.encode()).hexdigest()  # Default password: admin123
+
+# Log auth/config status at startup (non-sensitive)
+_default_hash = hashlib.sha256('admin123'.encode()).hexdigest()
+IS_DEFAULT_PASSWORD = (ADMIN_PASSWORD_HASH == _default_hash)
+
+# Log environment loading status at import time as well (works even if run via a wrapper)
+try:
+    logger.info(f"dotenv path used: {globals().get('ENV_PATH_USED', 'none')}")
+    logger.info(f"ADMIN_PASSWORD_HASH loaded: {'set' if ADMIN_PASSWORD_HASH else 'missing'}; default: {IS_DEFAULT_PASSWORD}")
+except Exception:
+    pass
 
 # API key for TouchDesigner (generate a secure random key)
 API_KEY = os.environ.get('API_KEY', 'td-api-key-change-this-in-production')
@@ -471,6 +530,26 @@ def get_playlist_files():
         logger.error(f"Error getting playlist files: {e}")
         return []
 
+def get_all_image_filenames():
+    """Return a deterministic list of all image filenames available for playlists.
+
+    This is used to make the 'default' playlist virtual so it always
+    includes all available image files without manual maintenance.
+    """
+    try:
+        folder = Path(UPLOAD_FOLDER)
+        files = [
+            f.name
+            for f in folder.glob('*')
+            if f.is_file() and not f.name.startswith('.') and f.suffix.lower().lstrip('.') in IMAGE_EXTENSIONS
+        ]
+        # Use alphabetical order for determinism in sequential mode
+        files.sort(key=lambda n: n.lower())
+        return files
+    except Exception as e:
+        logger.error(f"Error getting all image filenames: {e}")
+        return []
+
 def advance_playlist():
     """Advance to next item in playlist and display it"""
     try:
@@ -488,7 +567,11 @@ def advance_playlist():
             return False
 
         current_playlist = playlists[current_playlist_name]
-        playlist_files = current_playlist.get('files', [])
+        # Determine effective file list (virtual for default)
+        if current_playlist_name == 'default':
+            playlist_files = get_all_image_filenames()
+        else:
+            playlist_files = current_playlist.get('files', [])
 
         if not playlist_files:
             logger.warning(f"Playlist '{current_playlist_name}' is enabled but has no files")
@@ -506,7 +589,7 @@ def advance_playlist():
             return False
 
         # Update playlist if files were removed
-        if len(existing_files) != len(playlist_files):
+        if current_playlist_name != 'default' and len(existing_files) != len(playlist_files):
             current_playlist['files'] = existing_files
             settings['playlists'][current_playlist_name] = current_playlist
             logger.info(f"Updated playlist '{current_playlist_name}', removed {len(playlist_files) - len(existing_files)} missing files")
@@ -520,23 +603,45 @@ def advance_playlist():
             shuffled_order = current_playlist.get('shuffled_order', [])
             shuffle_index = current_playlist.get('shuffle_index', 0)
 
-            # Initialize or regenerate shuffled order if needed
-            if (not shuffled_order or
-                len(shuffled_order) != len(existing_files) or
-                shuffle_index >= len(shuffled_order) or
-                set(shuffled_order) != set(range(len(existing_files)))):
+            new_len = len(existing_files)
+            full_set = set(range(new_len))
 
-                # Create new shuffled order
-                shuffled_order = list(range(len(existing_files)))
+            # Initialize if empty or index out of bounds
+            needs_full_regen = (
+                not shuffled_order or
+                shuffle_index >= len(shuffled_order) or
+                any((idx < 0 or idx >= new_len) for idx in shuffled_order)
+            )
+
+            if needs_full_regen:
+                shuffled_order = list(range(new_len))
                 random.shuffle(shuffled_order)
                 shuffle_index = 0
                 logger.info(f"Generated new shuffled order for playlist '{current_playlist_name}': {shuffled_order}")
+            else:
+                # Insert newly added files at random positions AFTER the current pointer
+                current_set = set(shuffled_order)
+                missing = list(full_set - current_set)
+                if missing:
+                    random.shuffle(missing)
+                    insert_start = max(0, min(shuffle_index, len(shuffled_order)))
+                    for new_idx in missing:
+                        insert_pos = random.randint(insert_start, len(shuffled_order))
+                        shuffled_order.insert(insert_pos, new_idx)
+                    logger.info(f"Inserted {len(missing)} new items into shuffle for '{current_playlist_name}' starting at pos {insert_start}: {missing}")
 
             # Get the current file from shuffled order
             current_index = shuffled_order[shuffle_index]
 
             # Advance shuffle index for next time
             shuffle_index = (shuffle_index + 1) % len(shuffled_order)
+
+            # If we've completed a full pass, reshuffle for the next cycle
+            if shuffle_index == 0:
+                new_order = list(range(len(existing_files)))
+                random.shuffle(new_order)
+                logger.info(f"Completed full shuffle pass for '{current_playlist_name}'. New order: {new_order}")
+                shuffled_order = new_order
 
             # Store the updated shuffle state
             current_playlist['shuffled_order'] = shuffled_order
@@ -1220,7 +1325,11 @@ def get_displayed_file():
 
             if current_playlist_name in playlists:
                 current_playlist = playlists[current_playlist_name]
-                playlist_files = current_playlist.get('files', [])
+                # Use virtual file list for default
+                if current_playlist_name == 'default':
+                    playlist_files = get_all_image_filenames()
+                else:
+                    playlist_files = current_playlist.get('files', [])
                 current_index = current_playlist.get('current_index', 0)
 
                 if playlist_files and current_index < len(playlist_files):
@@ -1551,9 +1660,14 @@ def get_playlist():
         playlists = settings.get('playlists', {})
         current_playlist = playlists.get(current_playlist_name, {})
 
+        # If default playlist, override files dynamically with all images
+        effective_files = current_playlist.get('files', [])
+        if current_playlist_name == 'default':
+            effective_files = get_all_image_filenames()
+
         # Calculate timing information
         timing_info = {}
-        if settings.get('playlist_enabled', False) and current_playlist.get('files'):
+        if settings.get('playlist_enabled', False) and effective_files:
             last_change = current_playlist.get('last_change', 0)
             interval_minutes = settings.get('playlist_interval_minutes', 5)
 
@@ -1572,7 +1686,7 @@ def get_playlist():
             'interval_minutes': settings.get('playlist_interval_minutes', 5),
             'current_playlist_name': current_playlist_name,
             'playlists': playlists,
-            'files': current_playlist.get('files', []),
+            'files': effective_files,
             'current_index': current_playlist.get('current_index', 0),
             'last_change': current_playlist.get('last_change', 0),
             'display_mode': settings.get('display_mode', 'manual'),
@@ -1638,22 +1752,26 @@ def update_playlist():
                     'shuffle_index': 0
                 }
 
-            # Update files if provided
+            # Update files if provided (but not for the virtual default playlist)
             if 'files' in data:
-                # Validate that all files exist
-                folder = Path(UPLOAD_FOLDER)
-                valid_files = []
-                for filename in data['files']:
-                    if (folder / filename).exists():
-                        valid_files.append(filename)
-                    else:
-                        logger.warning(f"Playlist file does not exist: {filename}")
+                if current_playlist_name == 'default':
+                    # Ignore files updates for default silently to allow generic payloads
+                    logger.info("Ignoring files update for virtual default playlist")
+                else:
+                    # Validate that all files exist
+                    folder = Path(UPLOAD_FOLDER)
+                    valid_files = []
+                    for filename in data['files']:
+                        if (folder / filename).exists():
+                            valid_files.append(filename)
+                        else:
+                            logger.warning(f"Playlist file does not exist: {filename}")
 
-                playlists[current_playlist_name]['files'] = valid_files
-                playlists[current_playlist_name]['current_index'] = 0  # Reset to start
-                # Clear shuffle state when files change to force regeneration
-                playlists[current_playlist_name]['shuffled_order'] = []
-                playlists[current_playlist_name]['shuffle_index'] = 0
+                    playlists[current_playlist_name]['files'] = valid_files
+                    playlists[current_playlist_name]['current_index'] = 0  # Reset to start
+                    # Clear shuffle state when files change to force regeneration
+                    playlists[current_playlist_name]['shuffled_order'] = []
+                    playlists[current_playlist_name]['shuffle_index'] = 0
 
             # Update randomize setting if provided
             if 'randomize' in data:
@@ -1727,7 +1845,11 @@ def resume_playlist():
             return jsonify({'error': f"Playlist '{current_playlist_name}' not found"}), 404
 
         current_playlist = playlists[current_playlist_name]
-        files = current_playlist.get('files', [])
+        # Effective files for resume
+        if current_playlist_name == 'default':
+            files = get_all_image_filenames()
+        else:
+            files = current_playlist.get('files', [])
         if not files:
             return jsonify({'error': 'Current playlist has no files'}), 400
 
@@ -1875,8 +1997,11 @@ def switch_playlist():
         if save_settings(settings):
             logger.info(f"Switched to playlist: {playlist_name}")
 
-            # If playlist is enabled and has files, start displaying it
-            if settings.get('playlist_enabled') and playlists[playlist_name].get('files'):
+            # If playlist is enabled and has files (or default virtual has any), start displaying it
+            has_files = bool(playlists[playlist_name].get('files'))
+            if playlist_name == 'default':
+                has_files = bool(get_all_image_filenames())
+            if settings.get('playlist_enabled') and has_files:
                 advance_playlist()
 
             return jsonify({
@@ -2051,6 +2176,11 @@ if __name__ == '__main__':
     logger.info(f"Starting upload server...")
     logger.info(f"Upload folder: {UPLOAD_FOLDER}")
     logger.info(f"Allowed extensions: {ALLOWED_EXTENSIONS}")
+    try:
+        logger.info(f"dotenv path used: {ENV_PATH_USED if 'ENV_PATH_USED' in globals() else 'none'}")
+        logger.info(f"ADMIN_PASSWORD_HASH loaded: {'set' if ADMIN_PASSWORD_HASH else 'missing'}; default: {IS_DEFAULT_PASSWORD}")
+    except Exception:
+        pass
 
     # Start background playlist task
     playlist_thread = threading.Thread(target=playlist_background_task, daemon=True)

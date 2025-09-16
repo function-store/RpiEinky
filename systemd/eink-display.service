@@ -9,7 +9,7 @@ User=${USER}
 Group=gpio
 SupplementaryGroups=spi i2c gpio dialout
 WorkingDirectory=${HOME}/RpiEinky
-ExecStart=${HOME}/eink_env/bin/python ${HOME}/RpiEinky/run_eink_system.py
+ExecStart=${HOME}/RpiEinky/eink_env/bin/python ${HOME}/RpiEinky/run_eink_system.py
 ExecStop=/bin/kill -TERM $MAINPID
 Restart=always
 RestartSec=10
@@ -17,8 +17,8 @@ TimeoutStartSec=30
 TimeoutStopSec=30
 KillMode=mixed
 KillSignal=SIGTERM
-StandardOutput=append:${HOME}/RpiEinky/logs/display.log
-StandardError=append:${HOME}/RpiEinky/logs/display.log
+StandardOutput=journal
+StandardError=journal
 
 # Environment variables for hardware access
 Environment=PYTHONPATH=${HOME}/RpiEinky
@@ -31,4 +31,4 @@ Environment=XDG_RUNTIME_DIR=/run/user/${UID}
 RemainAfterExit=no
 
 [Install]
-WantedBy=multi-user.target 
+WantedBy=multi-user.target

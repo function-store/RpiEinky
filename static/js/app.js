@@ -1259,10 +1259,22 @@ class EinkDisplayManager {
 
         // Get current playlist files and settings
         const currentPlaylist = playlists[currentPlaylistName] || {};
-        const playlistFiles = currentPlaylist.files || [];
+        // For the virtual default playlist, hide editing UI and compute files from available list
+        const isDefault = currentPlaylistName === 'default';
+        const playlistFiles = isDefault ? (this.playlistData.files || []) : (currentPlaylist.files || []);
 
         // Set randomize checkbox
         document.getElementById('playlist-randomize').checked = currentPlaylist.randomize || false;
+
+        // Toggle edit controls visibility for default playlist
+        const editSection = document.getElementById('playlist-edit-section');
+        if (editSection) {
+            editSection.style.display = isDefault ? 'none' : '';
+        }
+        const renameBtn = document.getElementById('rename-playlist-btn');
+        if (renameBtn) renameBtn.style.display = isDefault ? 'none' : '';
+        const deleteBtn = document.getElementById('delete-playlist-btn');
+        if (deleteBtn) deleteBtn.style.display = isDefault ? 'none' : '';
 
         // Populate available files (only images)
         const availableFilesList = document.getElementById('available-files-list');
@@ -1274,12 +1286,14 @@ class EinkDisplayManager {
         const availableFiles = this.playlistData.available_files || [];
 
         // Add available files (not in current playlist)
-        availableFiles.forEach(file => {
-            if (!playlistFiles.includes(file.filename)) {
-                const item = this.createFileListItem(file.filename, 'available');
-                availableFilesList.appendChild(item);
-            }
-        });
+        if (!isDefault) {
+            availableFiles.forEach(file => {
+                if (!playlistFiles.includes(file.filename)) {
+                    const item = this.createFileListItem(file.filename, 'available');
+                    availableFilesList.appendChild(item);
+                }
+            });
+        }
 
         // Add playlist files in order
         playlistFiles.forEach(filename => {
@@ -1287,8 +1301,10 @@ class EinkDisplayManager {
             playlistFilesList.appendChild(item);
         });
 
-        // Bind playlist file management events
-        this.bindPlaylistEvents();
+        // Bind playlist file management events only for non-default
+        if (!isDefault) {
+            this.bindPlaylistEvents();
+        }
     }
 
     createFileListItem(filename, type) {
@@ -1494,7 +1510,7 @@ class EinkDisplayManager {
 
             // Get playlist files in order
             const playlistItems = document.querySelectorAll('#playlist-files-list .file-list-item');
-            const files = Array.from(playlistItems).map(item => item.dataset.filename);
+            const files = currentPlaylistName === 'default' ? [] : Array.from(playlistItems).map(item => item.dataset.filename);
 
             const playlistConfig = {
                 enabled: enabled,
@@ -1769,19 +1785,24 @@ class EinkDisplayManager {
             }
 
             // Stop the playlist while staying in override mode
+            const isDefault = (this.playlistData.current_playlist_name === 'default');
+            const payload = {
+                enabled: false,
+                interval_minutes: this.playlistData.interval_minutes,
+                live_mode_timeout_minutes: this.playlistData.live_mode_timeout_minutes,
+                current_playlist_name: this.playlistData.current_playlist_name,
+                playlist_name: this.playlistData.current_playlist_name,
+            };
+            if (!isDefault) {
+                payload.files = this.playlistData.playlists[this.playlistData.current_playlist_name]?.files || [];
+            }
+
             const response = await fetch('/api/playlist', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({
-                    enabled: false,
-                    interval_minutes: this.playlistData.interval_minutes,
-                    live_mode_timeout_minutes: this.playlistData.live_mode_timeout_minutes,
-                    current_playlist_name: this.playlistData.current_playlist_name,
-                    playlist_name: this.playlistData.current_playlist_name,
-                    files: this.playlistData.playlists[this.playlistData.current_playlist_name]?.files || []
-                })
+                body: JSON.stringify(payload)
             });
 
             if (response.ok) {
@@ -1907,19 +1928,24 @@ class EinkDisplayManager {
             const newEnabled = !this.playlistData.enabled;
 
             // Update playlist enabled status
+            const isDefault = (this.playlistData.current_playlist_name === 'default');
+            const payload = {
+                enabled: newEnabled,
+                interval_minutes: this.playlistData.interval_minutes,
+                live_mode_timeout_minutes: this.playlistData.live_mode_timeout_minutes,
+                current_playlist_name: this.playlistData.current_playlist_name,
+                playlist_name: this.playlistData.current_playlist_name,
+            };
+            if (!isDefault) {
+                payload.files = this.playlistData.playlists[this.playlistData.current_playlist_name]?.files || [];
+            }
+
             const response = await fetch('/api/playlist', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({
-                    enabled: newEnabled,
-                    interval_minutes: this.playlistData.interval_minutes,
-                    live_mode_timeout_minutes: this.playlistData.live_mode_timeout_minutes,
-                    current_playlist_name: this.playlistData.current_playlist_name,
-                    playlist_name: this.playlistData.current_playlist_name,
-                    files: this.playlistData.playlists[this.playlistData.current_playlist_name]?.files || []
-                })
+                body: JSON.stringify(payload)
             });
 
             if (response.ok) {

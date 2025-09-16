@@ -110,7 +110,10 @@ class EinkDisplayHandler(FileSystemEventHandler):
 
         # Initialize e-paper display
         if display_type is None:
+            logger.info("EinkDisplayHandler: no display_type CLI override, loading from config...")
             display_type = EPDConfig.load_display_config()
+        else:
+            logger.info(f"EinkDisplayHandler: using CLI-provided display_type: {display_type}")
         logger.info(f"Initializing display type: {display_type}")
         self.epd = UnifiedEPD.create_display(display_type)
         logger.info(f"Created EPD handler: {self.epd.__class__.__name__} for {display_type}") ##
