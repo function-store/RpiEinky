@@ -433,6 +433,52 @@ def generate_thumbnail(filepath, filename):
         logger.error(f"Thumbnail generation failed for {filename}: {e}")
         return None
 
+def _is_valid_image_file(filepath: str) -> bool:
+    """Return True if filepath is a readable image with PIL verify()."""
+    try:
+        with Image.open(filepath) as img:
+            img.verify()
+        return True
+    except Exception as e:
+        logger.warning(f"Invalid image file detected, removing: {filepath} ({e})")
+        return False
+
+def _cleanup_recent_variants(prefix: str, ext: str, current_ts: int, current_filepath: str, window_seconds: int = 5) -> int:
+    """Remove older variant files with the same prefix within a short time window.
+
+    Files are expected to be named as: f"{prefix}_{timestamp}{ext}" where timestamp is an int.
+    Keeps the current file and deletes older variants within window_seconds.
+    Returns number of files removed.
+    """
+    try:
+        removed = 0
+        folder = Path(UPLOAD_FOLDER)
+        for f in folder.glob(f"{prefix}_*{ext}"):
+            try:
+                # Skip the current file
+                if str(f) == str(current_filepath):
+                    continue
+                # Parse timestamp suffix
+                stem = f.stem  # e.g., prefix_1699999999
+                if '_' not in stem:
+                    continue
+                ts_part = stem.rsplit('_', 1)[-1]
+                if not ts_part.isdigit():
+                    continue
+                ts = int(ts_part)
+                # Only consider close-in-time predecessors
+                if 0 <= (current_ts - ts) <= window_seconds:
+                    f.unlink(missing_ok=True)
+                    removed += 1
+            except Exception as e:
+                logger.warning(f"Variant cleanup skip for {f}: {e}")
+        if removed:
+            logger.info(f"Removed {removed} recent variant(s) for prefix '{prefix}' within {window_seconds}s window")
+        return removed
+    except Exception as e:
+        logger.warning(f"Variant cleanup error for prefix '{prefix}': {e}")
+        return 0
+
 def trigger_settings_reload_and_redisplay():
     """Trigger a settings reload and re-display of current content when settings change"""
     try:
@@ -786,6 +832,20 @@ def upload_file():
                 os.rename(temp_filepath, filepath)
                 logger.info(f"Atomic rename completed")
 
+                # Validate image; discard if corrupt (no thumbnail will be generated for invalid)
+                if not _is_valid_image_file(filepath):
+                    try:
+                        os.remove(filepath)
+                        logger.warning(f"Discarded invalid image file: {filename}")
+                    finally:
+                        return jsonify({'error': 'Invalid image file'}), 400
+
+                # Remove older variants with close timestamps (TouchDesigner duplicate mitigation)
+                try:
+                    _cleanup_recent_variants(name, ext, timestamp, filepath, window_seconds=10)
+                except Exception as e:
+                    logger.warning(f"Variant cleanup failed: {e}")
+
                 # Generate thumbnail
                 try:
                     generate_thumbnail(filepath)
@@ -837,6 +897,20 @@ def upload_file():
                     logger.info(f"Performing atomic rename from {temp_filepath} to {filepath}")
                     os.rename(temp_filepath, filepath)
                     logger.info(f"Atomic rename completed")
+
+                    # Validate image; discard if corrupt
+                    if not _is_valid_image_file(filepath):
+                        try:
+                            os.remove(filepath)
+                            logger.warning(f"Discarded invalid image file: {filename}")
+                        finally:
+                            return jsonify({'error': 'Invalid image file'}), 400
+
+                    # Remove older variants with close timestamps (TouchDesigner duplicate mitigation)
+                    try:
+                        _cleanup_recent_variants(name, ext, timestamp, filepath, window_seconds=10)
+                    except Exception as e:
+                        logger.warning(f"Variant cleanup failed: {e}")
 
                     # Generate thumbnail if it's an image
                     generate_thumbnail(filepath, filename)
